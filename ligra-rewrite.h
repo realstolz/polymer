@@ -93,20 +93,17 @@ void partitionByDegree(graph<vertex> GA, int numOfShards, int *sizeArr, int size
 	}
 	if (accum[counter] >= averageDegree && counter < numOfShards - 1) {
 	    counter++;
-	    cout << tmpSizeCounter / (double)(PAGESIZE / sizeOfOneEle) << endl;
+	    //cout << tmpSizeCounter / (double)(PAGESIZE / sizeOfOneEle) << endl;
 	    tmpSizeCounter = 0;
 	}
     }
     
-    cout << tmpSizeCounter / (double)(PAGESIZE / sizeOfOneEle);
-    cout << GA.n << endl;
     free(degrees);
 }
 
 void *mapDataArray(int numOfShards, int *sizeArr, int sizeOfOneEle) {
     int numOfPages = 0;
-    for (int i = 0; i < numOfShards; i++) {
-	cout << sizeArr[i] << endl;
+    for (int i = 0; i < numOfShards; i++) {	
         numOfPages += sizeArr[i] / (double)(PAGESIZE / sizeOfOneEle);
     }
     numOfPages++;
@@ -119,7 +116,7 @@ void *mapDataArray(int numOfShards, int *sizeArr, int sizeOfOneEle) {
     int offset = 0;
     for (int i = 0; i < numOfShards; i++) {
 	void *startPos = (void *)((char *)toBeReturned + offset * sizeOfOneEle);
-	//printf("start binding %d : %p\n", i, startPos);
+	//printf("start binding %d : %d\n", i, offset);
 	numa_tonode_memory(startPos, sizeArr[i], i);
 	offset = offset + sizeArr[i];
     }
@@ -151,6 +148,7 @@ struct vertices {
 	offsets[0] = 0;
 	for (int i = 1; i < numOfNodes; i++) {
 	    offsets[i] = numOfVertexOnNode[i-1] + offsets[i-1];
+	    printf("offset of %d: %d\n", i, offsets[i]);
 	}
     }
 
@@ -245,6 +243,7 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     bool *currBitVector = frontier->getArr(currNodeNum);
     int nextSwitchPoint = frontier->getSize(0);
     int currOffset = 0;
+    int counter = 0;
     for (long i=0; i<numVertices; i++){
 	if (i == nextSwitchPoint) {
 	    currOffset += frontier->getSize(currNodeNum);
@@ -256,12 +255,14 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
 	    intT d = G[i].getOutDegree();
 	    for(intT j=0; j<d; j++){
 		uintT ngh = G[i].getOutNeighbor(j);
-		if (next->inRange(ngh) && f.cond(ngh) && f.updateAtomic(i,ngh)) {
+		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh)) {
 		    next->setBit(ngh, true);
+		    counter++;
 		}
 	    }
 	}
     }
+    //printf("edgeMap: %d\n", counter);
     return NULL;
 }
 

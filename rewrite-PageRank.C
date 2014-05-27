@@ -61,7 +61,7 @@ struct PR_F {
 	writeAdd(&p_next[d-rangeLow],getCurrP(s)/V[s].getOutDegree());
 	return 1;
     }
-    inline bool cond (intT d) { return true || (rangeLow <= d && d < rangeHi); } //does nothing
+    inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
 };
 
 //vertex map function to update its p value according to PageRank equation
@@ -211,6 +211,8 @@ void *PageRankThread(void *arg) {
 	//reset p_curr
 	*/
 	//vertexMap(Frontier,PR_Vertex_Reset(p_curr));
+
+	pthread_barrier_wait(&barr);
 	for (intT i = 0; i < blockSize; i++) {
 		p_curr[i] = p_next[i];
 		p_next[i] = 0.0;

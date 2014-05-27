@@ -36,6 +36,8 @@ volatile int shouldStart = 0;
 
 double *p_curr_global = NULL;
 double *p_next_global = NULL;
+
+double *p_ans = NULL;
 int vPerNode = 0;
 int numOfNode = 0;
 
@@ -54,10 +56,10 @@ struct PR_F {
 	return 1;
     }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
-	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
+	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());	
 	return 1;
     }
-    inline bool cond (intT d) { return true || (rangeLow <= d && d < rangeHi); } //does nothing
+    inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
 };
 
 //vertex map function to update its p value according to PageRank equation
@@ -129,7 +131,7 @@ void *PageRankThread(void *arg) {
 
     int blockSize = rangeHi - rangeLow;
 
-    printf("blockSizeof %d: %d\n", tid, blockSize);
+    //printf("blockSizeof %d: %d low: %d high: %d\n", tid, blockSize, rangeLow, rangeHi);
 
     double one_over_n = 1/(double)n;
     
@@ -159,7 +161,7 @@ void *PageRankThread(void *arg) {
     if (tid == 0)
 	Frontier = new vertices(numOfT);
 
-    printf("register %d: %p\n", tid, frontier);
+    //printf("register %d: %p\n", tid, frontier);
 
     pthread_barrier_wait(&barr);
     
@@ -221,12 +223,16 @@ void *PageRankThread(void *arg) {
 	}
 	*/
 
+	pthread_barrier_wait(&barr);
 	vertexMap(Frontier,PR_Vertex_Reset(p_curr), tid);
 	swap(p_curr,p_next);
+	if (tid == 0) {
+	    p_ans = p_curr;
+	}
 	
 	//Frontier.del(); 
 	//Frontier = output;
-	//switchFrontier(tid, Frontier, output);
+	switchFrontier(tid, Frontier, output);
 	pthread_barrier_wait(&barr);
 
 	/*
@@ -281,7 +287,7 @@ void PageRank(graph<vertex> GA, int maxIter) {
     nextTime("PageRank");
     if (needResult) {
 	for (intT i = 0; i < GA.n; i++) {
-	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_curr_global[i] << "\n";
+	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[i] << "\n";
 	}
     }
 }

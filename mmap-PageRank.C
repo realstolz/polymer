@@ -63,10 +63,10 @@ struct PR_F {
 	return 1;
     }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
+	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
 	if (d == 94890) {
-	    cout << "Update from " << s << ": " << std::scientific << std::setprecision(9) << p_curr[s] / V[s].getOutDegree() << "\n";
-	}
-	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());	
+	    //cout << "Update from " << s << ": " << std::scientific << std::setprecision(9) << p_curr[s] / V[s].getOutDegree() << " and result: " << p_next[d] << "\n";
+	}	
 	return 1;
     }
     inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
@@ -82,6 +82,9 @@ struct PR_Vertex_F {
 	p_curr(_p_curr), p_next(_p_next), 
 	damping(_damping), addedConstant((1-_damping)*(1/(double)n)){}
     inline bool operator () (intT i) {
+	if (i == 94890) {
+	    //cout << "Vertex update: " << std::scientific << std::setprecision(9) << p_next[i] << " and result: " << damping*p_next[i] + addedConstant << "\n";
+	}
 	p_next[i] = damping*p_next[i] + addedConstant;
 	return 1;
     }

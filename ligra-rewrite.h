@@ -360,9 +360,10 @@ void vertexMap(vertices *V, F add, int nodeNum, int subNum, int totalSub) {
     int subSize = size / totalSub;
     int startPos = subSize * subNum;
     int endPos = subSize * (subNum + 1);
-    if (subNum = totalSub - 1) {
+    if (subNum == totalSub - 1) {
 	endPos = size;
     }
+
     for (int i = startPos; i < endPos; i++) {
 	if (b[i])
 	    add(i + offset);

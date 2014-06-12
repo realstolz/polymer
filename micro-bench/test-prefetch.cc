@@ -6,8 +6,13 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+int PREFETCH_DIST = 1;
+
 int main(int argc, char *argv[]) {
     int size = atoi(argv[1]);
+    if (argc > 2) {
+	PREFETCH_DIST = atoi(argv[2]);
+    }
     int *arr = (int *)malloc((size+1) * sizeof(int));
     srand(time(NULL));
     for (int i = 0; i < size; i++) {
@@ -20,9 +25,18 @@ int main(int argc, char *argv[]) {
     gettimeofday(&start, &tz);
 
     int sum = 0;
-    for (int i = 0; i < size; i++) {
-	sum += arr[arr[i]];
-	__builtin_prefetch(&arr[arr[i+3]], 1, 3);
+    for (int i = 0; i < size / 4; i++) {
+	arr[(int)arr[i]]++;
+	__builtin_prefetch(&arr[(int)arr[i+PREFETCH_DIST]], 1, 3);
+	i++;
+	arr[(int)arr[i]]++;
+	__builtin_prefetch(&arr[(int)arr[i+PREFETCH_DIST]], 1, 3);
+	i++;
+	arr[(int)arr[i]]++;
+	__builtin_prefetch(&arr[(int)arr[i+PREFETCH_DIST]], 1, 3);
+	i++;
+	arr[(int)arr[i]]++;
+	__builtin_prefetch(&arr[(int)arr[i+PREFETCH_DIST]], 1, 3);
     }
 
     gettimeofday(&end, &tz);

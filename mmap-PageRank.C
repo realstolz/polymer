@@ -32,6 +32,8 @@ using namespace std;
 
 #define PAGE_SIZE (4096)
 
+#define CORES_PER_NODE (6)
+
 volatile int shouldStart = 0;
 
 double *p_curr_global = NULL;
@@ -42,6 +44,11 @@ int vPerNode = 0;
 int numOfNode = 0;
 
 bool needResult = false;
+
+pthread_barrier_t barr;
+pthread_mutex_t mut;
+
+vertices *Frontier;
 
 template <class vertex>
 struct PR_F {
@@ -56,6 +63,9 @@ struct PR_F {
 	return 1;
     }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
+	if (d == 94890) {
+	    cout << "Update from " << s << ": " << std::scientific << std::setprecision(9) << p_curr[s] / V[s].getOutDegree() << "\n";
+	}
 	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());	
 	return 1;
     }
@@ -97,10 +107,69 @@ struct PR_worker_arg {
     int rangeHi;
 };
 
-pthread_barrier_t barr;
-pthread_mutex_t mut;
+struct PR_subworker_arg {
+    void *GA;
+    int maxIter;
+    int tid;
+    int subTid;
+    int startPos;
+    int endPos;
+    int rangeLow;
+    int rangeHi;
+    double **p_curr_ptr;
+    double **p_next_ptr;
+    double damping;
+    pthread_barrier_t *node_barr;
+    LocalFrontier *localFrontier;
+};
 
-vertices *Frontier;
+template <class vertex>
+void *PageRankSubWorker(void *arg) {
+    PR_subworker_arg *my_arg = (PR_subworker_arg *)arg;
+    graph<vertex> &GA = *(graph<vertex> *)my_arg->GA;
+    const intT n = GA.n;
+    int maxIter = my_arg->maxIter;
+    int tid = my_arg->tid;
+    int subTid = my_arg->subTid;
+    pthread_barrier_t *local_barr = my_arg->node_barr;
+    LocalFrontier *output = my_arg->localFrontier;
+
+    double *p_curr = *(my_arg->p_curr_ptr);
+    double *p_next = *(my_arg->p_next_ptr);
+    
+    double damping = my_arg->damping;
+    int currIter = 0;
+    int rangeLow = my_arg->rangeLow;
+    int rangeHi = my_arg->rangeHi;
+
+    int start = my_arg->startPos;
+    int end = my_arg->endPos;
+
+    pthread_barrier_wait(local_barr);
+    while(1) {
+	if (maxIter > 0 && currIter >= maxIter)
+            break;
+        currIter++;
+
+	{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	
+	pthread_barrier_wait(local_barr);
+
+        edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,GA.m/20,DENSE_FORWARD, false, true, start, end);
+
+	pthread_barrier_wait(local_barr);
+
+        vertexMap(Frontier, PR_Vertex_F(p_curr, p_next, damping, n), tid, subTid, CORES_PER_NODE);
+
+	pthread_barrier_wait(local_barr);
+
+	vertexMap(Frontier,PR_Vertex_Reset(p_curr), tid, subTid, CORES_PER_NODE);
+
+	pthread_barrier_wait(local_barr);
+	swap(p_curr, p_next);
+    }
+    return NULL;
+}
 
 template <class vertex>
 void *PageRankThread(void *arg) {
@@ -177,25 +246,52 @@ void *PageRankThread(void *arg) {
     
     LocalFrontier *output = new LocalFrontier(next, rangeLow, rangeHi);
 
-    pthread_barrier_wait(&barr);
+    pthread_barrier_t localBarr;
+    pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
+    int sizeOfShards[CORES_PER_NODE];
+
+    partitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(double));
+
+    int startPos = 0;
+
+    pthread_t subTids[CORES_PER_NODE];
+
+    for (int i = 0; i < CORES_PER_NODE; i++) {	
+	PR_subworker_arg *arg = (PR_subworker_arg *)malloc(sizeof(PR_subworker_arg));
+	arg->GA = (void *)(&GA);
+	arg->maxIter = maxIter;
+	arg->tid = tid;
+	arg->subTid = i;
+	arg->rangeLow = rangeLow;
+	arg->rangeHi = rangeHi;
+	arg->p_curr_ptr = &p_curr;
+	arg->p_next_ptr = &p_next;
+	arg->damping = damping;
+	arg->node_barr = &localBarr;
+	arg->localFrontier = output;
+	
+	arg->startPos = startPos;
+	arg->endPos = startPos + sizeOfShards[i];
+	startPos = arg->endPos;
+        pthread_create(&subTids[i], NULL, PageRankSubWorker<vertex>, (void *)arg);
+    }
+
+    pthread_barrier_wait(&localBarr);
+    
+    pthread_barrier_wait(&barr);
     intT round = 0;
     while(1){
 	if (maxIter > 0 && round >= maxIter)
 	    break;
 	round++;
 
-	//gettimeofday(&start, &tz);
-	edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,GA.m/20,DENSE_FORWARD);
+	pthread_barrier_wait(&localBarr);
 
-	//gettimeofday(&end, &tz);
-	//double timeStart = ((double)start.tv_sec) + ((double)start.tv_usec) / 1000000.0;
-	//double timeEnd = ((double)end.tv_sec) + ((double)end.tv_usec) / 1000000.0;
-	//mapTime = timeEnd - timeStart;
-
-	//output.del();
-
-	vertexMap(Frontier, PR_Vertex_F(p_curr, p_next, damping, n), tid);
+	//edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,GA.m/20,DENSE_FORWARD);
+	pthread_barrier_wait(&localBarr);
+	
+	//vertexMap(Frontier, PR_Vertex_F(p_curr, p_next, damping, n), tid);
 
 	/*
 	double tmpConst = (1-damping)*(1/(double)n);
@@ -224,7 +320,10 @@ void *PageRankThread(void *arg) {
 	*/
 
 	pthread_barrier_wait(&barr);
-	vertexMap(Frontier,PR_Vertex_Reset(p_curr), tid);
+	pthread_barrier_wait(&localBarr);
+	//vertexMap(Frontier,PR_Vertex_Reset(p_curr), tid);
+	pthread_barrier_wait(&localBarr);
+	printf("swap over\n");
 	swap(p_curr,p_next);
 	if (tid == 0) {
 	    p_ans = p_curr;

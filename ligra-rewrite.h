@@ -156,6 +156,14 @@ struct vertices {
 	return numOfVertexOnNode[nodeNum];
     }
 
+    int getNodeNumOfIndex(int index) {
+	int result = 0;
+	while (result < numOfNodes && offsets[result] <= index) {
+	    result++;
+	}
+	return result - 1;
+    }
+
     int getOffset(int nodeNum) {
 	return offsets[nodeNum];
     }
@@ -235,21 +243,34 @@ bool* edgeMapDense(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *nex
 }
 
 template <class F, class vertex>
-bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next) {
+    bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, int start = 0, int end = 0) {
     intT numVertices = GA.n;
     vertex *G = GA.V;
-    {parallel_for(long i=next->startID;i<next->endID;i++) next->setBit(i, false);}
+
     int currNodeNum = 0;
     bool *currBitVector = frontier->getArr(currNodeNum);
     int nextSwitchPoint = frontier->getSize(0);
     int currOffset = 0;
     int counter = 0;
-    for (long i=0; i<numVertices; i++){
+    
+    int startPos = 0;
+    int endPos = numVertices;
+    if (part) {
+	startPos = start;
+	endPos = end;
+	currNodeNum = frontier->getNodeNumOfIndex(startPos);
+	//printf("nodeNum: %d %d\n", currNodeNum, endPos);
+	currBitVector = frontier->getArr(currNodeNum);
+	nextSwitchPoint = frontier->getOffset(currNodeNum+1);
+	currOffset = frontier->getOffset(currNodeNum);
+    }
+    for (long i=startPos; i<endPos; i++){
 	if (i == nextSwitchPoint) {
 	    currOffset += frontier->getSize(currNodeNum);
 	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
 	    currNodeNum++;
 	    currBitVector = frontier->getArr(currNodeNum);
+	    //printf("OK\n");
 	}
 	if (currBitVector[i-currOffset]) {
 	    intT d = G[i].getOutDegree();
@@ -282,7 +303,7 @@ void switchFrontier(int nodeNum, vertices *V, LocalFrontier *next) {
 // decides on sparse or dense base on number of nonzeros in the active vertices
 template <class F, class vertex>
 void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
-		 char option=DENSE, bool remDups=false) {
+	     char option=DENSE, bool remDups=false, bool part = false, int start = 0, int end = 0) {
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;
@@ -313,7 +334,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     
     
     bool* R = (option == DENSE_FORWARD) ? 
-	edgeMapDenseForward(GA, V, f, next) : 
+	edgeMapDenseForward(GA, V, f, next, part, start, end) : 
 	edgeMapDense(GA, V, f, next, option);
     //cout << "size (D) = " << v1.m << endl;    
 }
@@ -326,6 +347,23 @@ void vertexMap(vertices *V, F add, int nodeNum) {
     int offset = V->getOffset(nodeNum);
     bool *b = V->getArr(nodeNum);
     for (int i = 0; i < size; i++) {
+	if (b[i])
+	    add(i + offset);
+    }
+}
+
+template <class F>
+void vertexMap(vertices *V, F add, int nodeNum, int subNum, int totalSub) {
+    int size = V->getSize(nodeNum);
+    int offset = V->getOffset(nodeNum);
+    bool *b = V->getArr(nodeNum);
+    int subSize = size / totalSub;
+    int startPos = subSize * subNum;
+    int endPos = subSize * (subNum + 1);
+    if (subNum = totalSub - 1) {
+	endPos = size;
+    }
+    for (int i = startPos; i < endPos; i++) {
 	if (b[i])
 	    add(i + offset);
     }

@@ -64,9 +64,6 @@ struct PR_F {
     }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
 	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
-	if (d == 94890) {
-	    //cout << "Update from " << s << ": " << std::scientific << std::setprecision(9) << p_curr[s] / V[s].getOutDegree() << " and result: " << p_next[d] << "\n";
-	}	
 	return 1;
     }
     inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
@@ -82,9 +79,6 @@ struct PR_Vertex_F {
 	p_curr(_p_curr), p_next(_p_next), 
 	damping(_damping), addedConstant((1-_damping)*(1/(double)n)){}
     inline bool operator () (intT i) {
-	if (i == 94890) {
-	    //cout << "Vertex update: " << std::scientific << std::setprecision(9) << p_next[i] << " and result: " << damping*p_next[i] + addedConstant << "\n";
-	}
 	p_next[i] = damping*p_next[i] + addedConstant;
 	return 1;
     }
@@ -170,6 +164,7 @@ void *PageRankSubWorker(void *arg) {
 
 	pthread_barrier_wait(local_barr);
 	swap(p_curr, p_next);
+	pthread_barrier_wait(local_barr);
     }
     return NULL;
 }
@@ -326,15 +321,16 @@ void *PageRankThread(void *arg) {
 	pthread_barrier_wait(&localBarr);
 	//vertexMap(Frontier,PR_Vertex_Reset(p_curr), tid);
 	pthread_barrier_wait(&localBarr);
-	printf("swap over\n");
+
 	swap(p_curr,p_next);
 	if (tid == 0) {
 	    p_ans = p_curr;
 	}
-	
+
 	//Frontier.del(); 
 	//Frontier = output;
 	switchFrontier(tid, Frontier, output);
+	pthread_barrier_wait(&localBarr);	
 	pthread_barrier_wait(&barr);
 
 	/*

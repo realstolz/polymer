@@ -101,6 +101,55 @@ void partitionByDegree(graph<vertex> GA, int numOfShards, int *sizeArr, int size
     free(degrees);
 }
 
+template <class vertex>
+graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
+    vertex *V = GA.V;
+    vertex *newVertexSet = (vertex *)numa_alloc_local(sizeof(vertex) * GA.n);
+    int *counters = (int *)numa_alloc_local(sizeof(int) * GA.n);
+    int *offsets = (int *)numa_alloc_local(sizeof(int) * GA.n);
+    {parallel_for (intT i = 0; i < GA.n; i++) {
+	    intT d = V[i].getOutDegree();
+	    V[i].setFakeDegree(d);
+	    newVertexSet[i].setOutDegree(d);
+	    counters[i] = 0;
+	    for (intT j = 0; j < d; j++) {
+		intT ngh = V[i].getOutNeighbor(j);
+		if (rangeLow <= ngh && ngh < rangeHi)
+		    counters[i]++;
+	    }
+	}
+    }
+
+    intT totalSize = 0;
+    for (intT i = 0; i < GA.n; i++) {
+	offsets[i] = totalSize;
+	totalSize += counters[i];
+    }
+
+    intE *edges = (intE *)numa_alloc_local(sizeof(intE) * totalSize);
+
+    {parallel_for (intT i = 0; i < GA.n; i++) {
+	    newVertexSet[i].setFakeDegree(counters[i]);
+	    intE *localEdges = &edges[offsets[i]];
+	    intT counter = 0;
+	    intT d = V[i].getOutDegree();
+	    for (intT j = 0; j < d; j++) {
+		intT ngh = V[i].getOutNeighbor(j);
+		if (rangeLow <= ngh && ngh < rangeHi) {
+		    localEdges[counter] = ngh;
+		    counter++;
+		}
+	    }
+	    if (counter != newVertexSet[i].getFakeDegree()) {
+		printf("oops: %d %d\n", counter, newVertexSet[i].getFakeDegree());
+	    }
+	    newVertexSet[i].setOutNeighbors(localEdges);
+	}
+    }
+    printf("degree: %d\n", newVertexSet[0].getFakeDegree());
+    return graph<vertex>(newVertexSet, GA.n, GA.m);
+}
+
 void *mapDataArray(int numOfShards, int *sizeArr, int sizeOfOneEle) {
     int numOfPages = 0;
     for (int i = 0; i < numOfShards; i++) {	
@@ -273,15 +322,19 @@ template <class F, class vertex>
 	    //printf("OK\n");
 	}
 	if (currBitVector[i-currOffset]) {
-	    intT d = G[i].getOutDegree();
+	    intT d = G[i].getFakeDegree();	    
 	    for(intT j=0; j<d; j++){
 		uintT ngh = G[i].getOutNeighbor(j);
-		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh)) {
-		    next->setBit(ngh, true);
+		if (ngh == 0) {
 		    counter++;
 		}
+		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh)) {
+		    next->setBit(ngh, true);
+		}
+		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getOutNeighbor(j+1)), 1, 0);
 	    }
 	}
+	__builtin_prefetch(f.nextPrefetchAddr(i+1), 0, 3);
     }
     //printf("edgeMap: %d\n", counter);
     return NULL;

@@ -58,12 +58,21 @@ struct PR_F {
     int rangeHi;
     PR_F(double* _p_curr, double* _p_next, vertex* _V, int _rangeLow, int _rangeHi) : 
 	p_curr(_p_curr), p_next(_p_next), V(_V), rangeLow(_rangeLow), rangeHi(_rangeHi) {}
+
+    inline void *nextPrefetchAddr(intT index) {
+	return &p_curr[index];
+    }
     inline bool update(intT s, intT d){ //update function applies PageRank equation
 	p_next[d] += p_curr[s]/V[s].getOutDegree();
 	return 1;
     }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
 	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
+	/*
+	if (d == 110101) {
+	    cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << p_curr[s]/V[s].getOutDegree() << " -- " << p_next[d] << "\n";
+	}
+	*/
 	return 1;
     }
     inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
@@ -147,8 +156,9 @@ void *PageRankSubWorker(void *arg) {
 	if (maxIter > 0 && currIter >= maxIter)
             break;
         currIter++;
-
-	{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	if (subTid == 0) {
+	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	}
 	
 	pthread_barrier_wait(local_barr);
 
@@ -169,6 +179,8 @@ void *PageRankSubWorker(void *arg) {
     return NULL;
 }
 
+pthread_barrier_t timerBarr;
+
 template <class vertex>
 void *PageRankThread(void *arg) {
     PR_worker_arg *my_arg = (PR_worker_arg *)arg;
@@ -176,7 +188,14 @@ void *PageRankThread(void *arg) {
     int maxIter = my_arg->maxIter;
     int tid = my_arg->tid;
 
+    int rangeLow = my_arg->rangeLow;
+    int rangeHi = my_arg->rangeHi;
+
+    graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+
     while (shouldStart == 0) ;
+
+    pthread_barrier_wait(&timerBarr);
 
     char nodeString[10];
     sprintf(nodeString, "%d", tid);
@@ -192,9 +211,6 @@ void *PageRankThread(void *arg) {
     const double damping = 0.85;
     const double epsilon = 0.0000001;
     int numOfT = my_arg->numOfNode;
-
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
 
     int blockSize = rangeHi - rangeLow;
 
@@ -249,7 +265,7 @@ void *PageRankThread(void *arg) {
 
     int sizeOfShards[CORES_PER_NODE];
 
-    partitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(double));
+    partitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(double), true);
 
     int startPos = 0;
 
@@ -257,7 +273,7 @@ void *PageRankThread(void *arg) {
 
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	PR_subworker_arg *arg = (PR_subworker_arg *)malloc(sizeof(PR_subworker_arg));
-	arg->GA = (void *)(&GA);
+	arg->GA = (void *)(&localGraph);
 	arg->maxIter = maxIter;
 	arg->tid = tid;
 	arg->subTid = i;
@@ -355,6 +371,7 @@ void PageRank(graph<vertex> GA, int maxIter) {
     numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
+    pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
@@ -376,8 +393,10 @@ void PageRank(graph<vertex> GA, int maxIter) {
 	prev = prev + sizeArr[i];
 	pthread_create(&tids[i], NULL, PageRankThread<vertex>, (void *)arg);
     }
-    startTime();
     shouldStart = 1;
+    pthread_barrier_wait(&timerBarr);
+    //nextTime("Graph Partition");
+    startTime();
     printf("all created\n");
     for (int i = 0; i < numOfNode; i++) {
 	pthread_join(tids[i], NULL);

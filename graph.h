@@ -11,16 +11,19 @@ using namespace std;
 struct symmetricVertex {
   intE* neighbors;
   intT degree;
+  intT fakeDegree;
   void del() {free(neighbors); }
 symmetricVertex(intE* n, intT d) : neighbors(n), degree(d) {}
   uintE getInNeighbor(intT j) { return neighbors[j]; }
   uintE getOutNeighbor(intT j) { return neighbors[j]; }
   intT getInDegree() { return degree; }
   intT getOutDegree() { return degree; }
+  intT getFakeDegree() { return fakeDegree; }
   void setInNeighbors(intE* _i) { neighbors = _i; }
   void setOutNeighbors(intE* _i) { neighbors = _i; }
   void setInDegree(intT _d) { degree = _d; }
   void setOutDegree(intT _d) { degree = _d; }
+  void setFakeDegree(intT _d) { fakeDegree = _d; }
   void flipEdges() {}
 };
 
@@ -28,6 +31,7 @@ struct asymmetricVertex {
   intE* inNeighbors;
   intE* outNeighbors;
   intT outDegree;
+  intT fakeOutDegree;
   intT inDegree;
   void del() {free(inNeighbors); free(outNeighbors);}
 asymmetricVertex(intE* iN, intE* oN, intT id, intT od) : inNeighbors(iN), outNeighbors(oN), inDegree(id), outDegree(od) {}
@@ -35,10 +39,12 @@ asymmetricVertex(intE* iN, intE* oN, intT id, intT od) : inNeighbors(iN), outNei
   uintE getOutNeighbor(intT j) { return outNeighbors[j]; }
   intT getInDegree() { return inDegree; }
   intT getOutDegree() { return outDegree; }
+  intT getFakeDegree() { return fakeOutDegree; }
   void setInNeighbors(intE* _i) { inNeighbors = _i; }
   void setOutNeighbors(intE* _i) { outNeighbors = _i; }
   void setInDegree(intT _d) { inDegree = _d; }
   void setOutDegree(intT _d) { outDegree = _d; }
+  void setFakeDegree(intT _d) { fakeOutDegree = _d; }
   void flipEdges() { swap(inNeighbors,outNeighbors); swap(inDegree,outDegree); }
 };
 

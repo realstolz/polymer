@@ -188,6 +188,11 @@ void *PageRankThread(void *arg) {
     int maxIter = my_arg->maxIter;
     int tid = my_arg->tid;
 
+    char nodeString[10];
+    sprintf(nodeString, "%d", tid);
+    struct bitmask *nodemask = numa_parse_nodestring(nodeString);
+    numa_bind(nodemask);
+
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
 
@@ -196,11 +201,7 @@ void *PageRankThread(void *arg) {
     while (shouldStart == 0) ;
 
     pthread_barrier_wait(&timerBarr);
-
-    char nodeString[10];
-    sprintf(nodeString, "%d", tid);
-    struct bitmask *nodemask = numa_parse_nodestring(nodeString);
-    numa_bind(nodemask);
+    printf("over filtering\n");
     /*
     if (0 != __cilkrts_set_param("nworkers","1")) {
 	printf("set failed: %d\n", tid);
@@ -366,14 +367,41 @@ void *PageRankThread(void *arg) {
     return NULL;
 }
 
+struct PR_Hash_F {
+    int shardNum;
+    int vertPerShard;
+    int n;
+    PR_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    
+    inline int hashFunc(int index) {
+	if (index >= shardNum * vertPerShard) {
+	    return index;
+	}
+	int idxOfShard = index % shardNum;
+	int idxInShard = index / shardNum;
+	return (idxOfShard * vertPerShard + idxInShard);
+    }
+
+    inline int hashBackFunc(int index) {
+	if (index >= shardNum * vertPerShard) {
+	    return index;
+	}
+	int idxOfShard = index / vertPerShard;
+	int idxInShard = index % vertPerShard;
+	return (idxOfShard + idxInShard * shardNum);
+    }
+};
+
 template <class vertex>
-void PageRank(graph<vertex> GA, int maxIter) {
+void PageRank(graph<vertex> &GA, int maxIter) {
     numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
+    PR_Hash_F hasher(GA.n, numOfNode);
+    graphHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
     
     p_curr_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
@@ -404,7 +432,7 @@ void PageRank(graph<vertex> GA, int maxIter) {
     nextTime("PageRank");
     if (needResult) {
 	for (intT i = 0; i < GA.n; i++) {
-	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[i] << "\n";
+	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
 	}
     }
 }

@@ -16,6 +16,8 @@ struct symmetricVertex {
 symmetricVertex(intE* n, intT d) : neighbors(n), degree(d) {}
   uintE getInNeighbor(intT j) { return neighbors[j]; }
   uintE getOutNeighbor(intT j) { return neighbors[j]; }
+  intE* getInNeighborPtr() { return neighbors;}
+  intE* getOutNeighborPtr() { return neighbors;}
   intT getInDegree() { return degree; }
   intT getOutDegree() { return degree; }
   intT getFakeDegree() { return fakeDegree; }
@@ -37,6 +39,8 @@ struct asymmetricVertex {
 asymmetricVertex(intE* iN, intE* oN, intT id, intT od) : inNeighbors(iN), outNeighbors(oN), inDegree(id), outDegree(od) {}
   uintE getInNeighbor(intT j) { return inNeighbors[j]; }
   uintE getOutNeighbor(intT j) { return outNeighbors[j]; }
+  intE* getInNeighborPtr() { return inNeighbors;}
+  intE* getOutNeighborPtr() { return outNeighbors;}
   intT getInDegree() { return inDegree; }
   intT getOutDegree() { return outDegree; }
   intT getFakeDegree() { return fakeOutDegree; }

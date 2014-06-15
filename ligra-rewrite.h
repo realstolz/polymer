@@ -101,6 +101,25 @@ void partitionByDegree(graph<vertex> GA, int numOfShards, int *sizeArr, int size
     free(degrees);
 }
 
+template <class vertex, class Hash_F>
+void graphHasher(graph<vertex> &GA, Hash_F hash) {
+    vertex *V = GA.V;
+    vertex *newVertexSet = (vertex *)malloc(sizeof(vertex) * GA.n);
+
+    {parallel_for (intT i = 0; i < GA.n; i++) {
+	    intT d = V[i].getOutDegree();
+	    V[i].setFakeDegree(d);
+	    intE *outEdges = V[i].getOutNeighborPtr();
+	    for (intT j = 0; j < d; j++) {
+		outEdges[j] = hash.hashFunc(outEdges[j]);
+	    }
+	    newVertexSet[hash.hashFunc(i)] = V[i];	    
+	}
+    }
+    GA.V = newVertexSet;
+    free(V);
+}
+
 template <class vertex>
 graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
     vertex *V = GA.V;
@@ -117,6 +136,7 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
 		if (rangeLow <= ngh && ngh < rangeHi)
 		    counters[i]++;
 	    }
+	    newVertexSet[i].setFakeDegree(counters[i]);
 	}
     }
 
@@ -126,10 +146,11 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
 	totalSize += counters[i];
     }
 
+    numa_free(counters, sizeof(int) * GA.n);
+
     intE *edges = (intE *)numa_alloc_local(sizeof(intE) * totalSize);
 
     {parallel_for (intT i = 0; i < GA.n; i++) {
-	    newVertexSet[i].setFakeDegree(counters[i]);
 	    intE *localEdges = &edges[offsets[i]];
 	    intT counter = 0;
 	    intT d = V[i].getOutDegree();
@@ -146,7 +167,8 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
 	    newVertexSet[i].setOutNeighbors(localEdges);
 	}
     }
-    printf("degree: %d\n", newVertexSet[0].getFakeDegree());
+    numa_free(offsets, sizeof(int) * GA.n);
+    //printf("degree: %d\n", newVertexSet[0].getFakeDegree());
     return graph<vertex>(newVertexSet, GA.n, GA.m);
 }
 
@@ -334,7 +356,8 @@ template <class F, class vertex>
 		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getOutNeighbor(j+1)), 1, 0);
 	    }
 	}
-	__builtin_prefetch(f.nextPrefetchAddr(i+1), 0, 3);
+	//__builtin_prefetch(f.nextPrefetchAddr(i+1), 0, 3);
+	//__builtin_prefetch(G[i+3].getOutNeighborPtr(), 0, 3);
     }
     //printf("edgeMap: %d\n", counter);
     return NULL;

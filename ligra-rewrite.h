@@ -56,6 +56,31 @@ int roundUp(double x) {
     return ones;
 }
 
+struct Default_Hash_F {
+    int shardNum;
+    int vertPerShard;
+    int n;
+    Default_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    
+    inline int hashFunc(int index) {
+        if (index >= shardNum * vertPerShard) {
+            return index;
+        }
+        int idxOfShard = index % shardNum;
+        int idxInShard = index / shardNum;
+        return (idxOfShard * vertPerShard + idxInShard);
+    }
+    
+    inline int hashBackFunc(int index) {
+        if (index >= shardNum * vertPerShard) {
+            return index;
+        }
+        int idxOfShard = index / vertPerShard;
+        int idxInShard = index % vertPerShard;
+        return (idxOfShard + idxInShard * shardNum);
+    }
+};
+
 template <class vertex>
 void partitionByDegree(graph<vertex> GA, int numOfShards, int *sizeArr, int sizeOfOneEle, bool useOutDegree=false) {
     const intT n = GA.n;
@@ -274,7 +299,7 @@ struct LocalFrontier {
     LocalFrontier(bool *_b, int start, int end):b(_b), startID(start), endID(end){}
     
     bool inRange(int index) { return (startID <= index && index < endID);}
-    void setBit(int index, bool val) { b[index-startID] = val;}
+    inline void setBit(int index, bool val) { b[index-startID] = val;}
 
     bool *swapBitVector(bool *newB) {
 	bool *tmp = b;
@@ -350,7 +375,7 @@ template <class F, class vertex>
 		if (ngh == 0) {
 		    counter++;
 		}
-		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh)) {
+		if (/*next->inRange(ngh) &&*/ /*f.cond(ngh) && */f.updateAtomic(i,ngh)) {
 		    next->setBit(ngh, true);
 		}
 		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getOutNeighbor(j+1)), 1, 0);
@@ -455,6 +480,25 @@ void vertexFilter(vertices *V, F filter, int nodeNum, bool *result) {
 	result[i] = false;
 	if (b[i])
 	    result[i] = filter(i + offset);
+    }
+}
+
+template <class F>
+void vertexFilter(vertices *V, F filter, int nodeNum, int subNum, int totalSub, LocalFrontier *result) {
+    int size = V->getSize(nodeNum);
+    int offset = V->getOffset(nodeNum);
+    bool *b = V->getArr(nodeNum);
+    int subSize = size / totalSub;
+    int startPos = subSize * subNum;
+    int endPos = subSize * (subNum + 1);
+    if (subNum == totalSub - 1) {
+	endPos = size;
+    }
+
+    for (int i = startPos; i < endPos; i++) {
+	result[i] = false;
+	if (b[i])
+	    result->setBit(i, filter(i + offset));
     }
 }
 

@@ -33,7 +33,7 @@ COMMON= ligra.h graph.h utils.h IO.h parallel.h gettime.h quickSort.h
 
 ALL= BFS BC Components Radii PageRank PageRankDelta BellmanFord PageRank-Pull 
 
-MYAPPS= DegreeCount try-PageRank rewrite-PageRank mmap-PageRank
+MYAPPS= DegreeCount numa-PageRank numa-PageRankDelta
 MYHEADER= ligra-rewrite.h ligra-numa.h
 LIBS_I_NEED= -pthread -lnuma
 

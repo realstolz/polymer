@@ -368,6 +368,11 @@ template <class F, class vertex>
 	    currBitVector = frontier->getArr(currNodeNum);
 	    //printf("OK\n");
 	}
+	/*
+	if (i == 657797) {
+	    printf("got you: %d\n", currBitVector[i-currOffset]?1:0);
+	}
+	*/
 	if (currBitVector[i-currOffset]) {
 	    intT d = G[i].getFakeDegree();	    
 	    for(intT j=0; j<d; j++){
@@ -375,7 +380,7 @@ template <class F, class vertex>
 		if (ngh == 0) {
 		    counter++;
 		}
-		if (/*next->inRange(ngh) &&*/ /*f.cond(ngh) && */f.updateAtomic(i,ngh)) {
+		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh)) {
 		    next->setBit(ngh, true);
 		}
 		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getOutNeighbor(j+1)), 1, 0);
@@ -496,9 +501,11 @@ void vertexFilter(vertices *V, F filter, int nodeNum, int subNum, int totalSub, 
     }
 
     for (int i = startPos; i < endPos; i++) {
-	result[i] = false;
+	result->setBit(i+offset, b[i] ? (filter(i+offset)) : (false));
+	/*
 	if (b[i])
 	    result->setBit(i, filter(i + offset));
+	*/
     }
 }
 

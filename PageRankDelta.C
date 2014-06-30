@@ -26,6 +26,9 @@
 #include "math.h"
 using namespace std;
 
+bool needResult = false;
+bool needLog = false;
+
 template <class vertex>
 struct PR_F {
   vertex* V;
@@ -38,6 +41,11 @@ struct PR_F {
   }
   inline bool updateAtomic (intT s, intT d) {
     writeAdd(&nghSum[d],Delta[s]/V[s].getOutDegree());
+    /*
+    if (needLog && d == 1 && s == 657797) {
+	cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << Delta[s]/V[s].getOutDegree() << " -- " << nghSum[d] << "\n";
+    }
+    */
     return 1;
   }
   inline bool cond (intT d) { return 1; }
@@ -116,12 +124,13 @@ void PageRankDelta(graph<vertex> GA, int maxIter = -1) {
     // cout<<"Round "<<round<<", frontier size = "<<Frontier.numNonzeros()<<endl;
     vertices output = edgeMap(GA, Frontier, PR_F<vertex>(GA.V,Delta,nghSum),GA.m/20,DENSE_FORWARD);
     output.del();
-
+    needLog = true;
     vertices active 
       = (round == 1) ? 
       vertexFilter(All,PR_Vertex_F_FirstRound(p,Delta,nghSum,damping,one_over_n,epsilon2)) :
       vertexFilter(All,PR_Vertex_F(p,Delta,nghSum,damping,epsilon2));
     //compute L1-norm (use nghSum as temp array)
+    /*
     {parallel_for(intT i=0;i<n;i++) {
       nghSum[i] = fabs(Delta[i]);
       }}
@@ -129,6 +138,7 @@ void PageRankDelta(graph<vertex> GA, int maxIter = -1) {
     //cout<<"L1 norm = "<<L1_norm<<endl;
 
     if(L1_norm < epsilon) break;
+    */
     //reset
     vertexMap(All,PR_Vertex_Reset(nghSum));
     Frontier.del();
@@ -136,11 +146,12 @@ void PageRankDelta(graph<vertex> GA, int maxIter = -1) {
   }
   cout<<"Finished in "<<round<<" iterations\n";
   Frontier.del();
-  /*
-  for (int i = 0; i < n; i++) {
-      std::cout << i << "\t" << p[i] << std::endl;
+
+  if (needResult) {
+      for (intT i = 0; i < GA.n; i++) {
+	  cout << i << "\t" << std::scientific << std::setprecision(9)<< p[i] << "\n";
+      }
   }
-  */
   free(p); free(Delta); free(nghSum);
   All.del();
   nextTime("PageRankDelta");
@@ -151,10 +162,12 @@ int parallel_main(int argc, char* argv[]) {
   bool binary = false;
   bool symmetric = false;
   int maxIter = -1;
+  needResult = false;
   if(argc > 1) iFile = argv[1];
   if(argc > 2) maxIter = atoi(argv[2]);
-  if(argc > 3) if((string) argv[3] == (string) "-s") symmetric = true;
-  if(argc > 4) if((string) argv[4] == (string) "-b") binary = true;
+  if(argc > 3) if((string) argv[3] == (string) "-result") needResult = true;
+  if(argc > 4) if((string) argv[4] == (string) "-s") symmetric = true;
+  if(argc > 5) if((string) argv[5] == (string) "-b") binary = true;
 
   if(symmetric) {
     graph<symmetricVertex> G = 

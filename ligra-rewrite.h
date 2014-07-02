@@ -226,6 +226,7 @@ struct vertices {
     int numOfNodes;
     int *numOfVertexOnNode;
     int *offsets;
+    int *numOfNonZero;
     bool** d;
     
     vertices(int _numOfNodes) {
@@ -233,6 +234,7 @@ struct vertices {
 	d = (bool **)malloc(numOfNodes * sizeof(bool*));
 	numOfVertexOnNode = (int *)malloc(numOfNodes * sizeof(int));
 	offsets = (int *)malloc(numOfNodes * sizeof(int));
+	numOfNonZero = (int *)malloc(numOfNodes * sizeof(int));
     }
 
     void registerArr(int nodeNum, bool* arr, int size) {
@@ -244,12 +246,25 @@ struct vertices {
 	offsets[0] = 0;
 	for (int i = 1; i < numOfNodes; i++) {
 	    offsets[i] = numOfVertexOnNode[i-1] + offsets[i-1];
-	    printf("offset of %d: %d\n", i, offsets[i]);
+	    //printf("offset of %d: %d\n", i, offsets[i]);
 	}
     }
 
     int getSize(int nodeNum) {
 	return numOfVertexOnNode[nodeNum];
+    }
+
+    void calculateNumOfNonZero(int nodeNum) {
+	numOfNonZero[nodeNum] = 0;
+	numOfNonZero[nodeNum] = sequence::sum(d[nodeNum], numOfVertexOnNode[nodeNum]);
+    }
+
+    bool isEmpty() {
+	int sum = 0;
+	for (int i = 0; i < numOfNodes; i++) {
+	    sum = sum + numOfNonZero[i];
+	}
+	return (sum == 0);
     }
 
     int getNodeNumOfIndex(int index) {
@@ -262,6 +277,16 @@ struct vertices {
 
     int getOffset(int nodeNum) {
 	return offsets[nodeNum];
+    }
+
+    void setBit(int index, bool bit) {
+	int accum = 0;
+	int i = 0;
+        while (index >= accum + numOfVertexOnNode[i]) {
+	    accum += numOfVertexOnNode[i];
+	    i++;
+	}
+	*(d[i] + (index - accum)) = bit;
     }
 
     bool getBit(int index) {

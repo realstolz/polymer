@@ -66,8 +66,9 @@ void BFS(intT start, graph<vertex> GA) {
   Frontier.del();
   free(Parents); 
 
-  // cout<<"Vertices visited = "<<numVisited<<endl;
+  cout<<"Vertices visited = "<<numVisited<<endl;
   // cout<<"Edges traversed = "<<edgesTraversed<<endl;
+  cout << "Finished in " << round << " iterations\n";
   nextTime("BFS");
 }
 

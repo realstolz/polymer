@@ -89,7 +89,6 @@ void *BFSSubWorker(void *arg) {
     BFS_subworker_arg *my_arg = (BFS_subworker_arg *)arg;
     graph<vertex> &GA = *(graph<vertex> *)my_arg->GA;
     const intT n = GA.n;
-    int maxIter = my_arg->maxIter;
     int tid = my_arg->tid;
     int subTid = my_arg->subTid;
     pthread_barrier_t *local_barr = my_arg->node_barr;
@@ -105,21 +104,58 @@ void *BFSSubWorker(void *arg) {
     int start = my_arg->startPos;
     int end = my_arg->endPos;
 
+    intT numVisited = 0;
+
     pthread_barrier_wait(local_barr);
 
-    while(!Frontier.isEmpty()){ //loop until frontier is empty
-	round++;
-	numVisited+=Frontier.numNonzeros();
-	
+    if (subTid == 0) 
+	Frontier->calculateNumOfNonZero(tid);
+
+    pthread_barrier_wait(global_barr);
+
+    struct timeval startT, endT;
+    struct timezone tz = {0, 0};
+    while(!Frontier->isEmpty() || currIter == 0){ //loop until frontier is empty
+	currIter++;
+	if (tid + subTid == 0) {
+	    numVisited += Frontier->numNonzeros();
+	    //printf("num of non zeros: %d\n", Frontier->numNonzeros());
+	}
+
+	if (subTid == 0) {
+	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	}
+	pthread_barrier_wait(global_barr);
 	//apply edgemap
-	vertices output = edgeMap(GA, Frontier, BFS_F(parents),GA.m/20);
+	edgeMap(GA, Frontier, BFS_F(parents), output, GA.m/20, DENSE_FORWARD, false, true, start, end);
 	
 	pthread_barrier_wait(global_barr);
 	if (subTid == 0) {
 	    switchFrontier(tid, Frontier, output); //set new frontier
+	}
+
+	pthread_barrier_wait(global_barr);
+
+	if (subTid == 0) {
+	    gettimeofday(&startT, &tz);
 	    Frontier->calculateNumOfNonZero(tid);
+	    gettimeofday(&endT, &tz);
+	    
+	    double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+	    double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+	    
+	    double mapTime = timeEnd - timeStart;
+	    /*
+	    if (tid + subTid == 0)
+		printf("edge map time: %lf\n", mapTime);
+	    */
 	}
 	pthread_barrier_wait(global_barr);
+    }
+
+    if (tid + subTid == 0) {
+	cout << "Vertices visited = " << numVisited << "\n";
+	cout << "Finished in " << currIter << " iterations\n";
     }
 
     pthread_barrier_wait(local_barr);
@@ -129,7 +165,7 @@ void *BFSSubWorker(void *arg) {
 template <class vertex>
 void *BFSWorker(void *arg) {
     BFS_worker_arg *my_arg = (BFS_worker_arg *)arg;
-    graph<vertex> &GA = *(graph<vertex *)my_arg->GA;
+    graph<vertex> &GA = *(graph<vertex> *)my_arg->GA;
     int tid = my_arg->tid;
     char nodeString[10];
     sprintf(nodeString, "%d", tid);
@@ -149,7 +185,14 @@ void *BFSWorker(void *arg) {
     int blockSize = rangeHi - rangeLow;
 
     intT *parents = parents_global;
+
+    for (intT i = rangeLow; i < rangeHi; i++) {
+	parents[i] = -1;
+    }
+    
     bool *frontier = (bool *)numa_alloc_local(sizeof(bool) * blockSize);
+
+    for(intT i=0;i<blockSize;i++) frontier[i] = false;
 
     if (tid == 0)
 	Frontier = new vertices(numOfT);
@@ -161,6 +204,7 @@ void *BFSWorker(void *arg) {
     if (tid == 0) {
 	Frontier->calculateOffsets();
 	Frontier->setBit(my_arg->start, true);
+	parents[my_arg->start] = my_arg->start;
     }
     
     bool *next = (bool *)numa_alloc_local(sizeof(bool) * blockSize);
@@ -204,19 +248,44 @@ void *BFSWorker(void *arg) {
     return NULL;
 }
 
+struct PR_Hash_F {
+    int shardNum;
+    int vertPerShard;
+    int n;
+    PR_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    
+    inline int hashFunc(int index) {
+	if (index >= shardNum * vertPerShard) {
+	    return index;
+	}
+	int idxOfShard = index % shardNum;
+	int idxInShard = index / shardNum;
+	return (idxOfShard * vertPerShard + idxInShard);
+    }
+
+    inline int hashBackFunc(int index) {
+	if (index >= shardNum * vertPerShard) {
+	    return index;
+	}
+	int idxOfShard = index / vertPerShard;
+	int idxInShard = index % vertPerShard;
+	return (idxOfShard + idxInShard * shardNum);
+    }
+};
+
 template <class vertex>
-void BFS(intT start, graph<vertex> GA) {
-    numOfNode = numa_num_configured_nodes();
+void BFS(intT start, graph<vertex> &GA) {
+    numOfNode = 1;//numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
+    pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
-    pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
-    Default_Hash_F hasher(GA.n, numOfNode);
+    PR_Hash_F hasher(GA.n, numOfNode);
     graphHasher(GA, hasher);
-    partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
+    partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
     
-    parents_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(intT));
+    parents_global = (intT *)mapDataArray(numOfNode, sizeArr, sizeof(intT));
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
@@ -228,7 +297,7 @@ void BFS(intT start, graph<vertex> GA) {
 	arg->numOfNode = numOfNode;
 	arg->rangeLow = prev;
 	arg->rangeHi = prev + sizeArr[i];
-	arg->start = hasher.hashFunc(start);
+	arg->start = hasher.hashFunc(start);	
 	prev = prev + sizeArr[i];
 	pthread_create(&tids[i], NULL, BFSWorker<vertex>, (void *)arg);
     }
@@ -243,7 +312,7 @@ void BFS(intT start, graph<vertex> GA) {
     nextTime("BFS");
     if (needResult) {
 	for (intT i = 0; i < GA.n; i++) {
-	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
+	    cout << i << "\t" << std::scientific << std::setprecision(9) << parents_global[hasher.hashFunc(i)] << "\n";
 	}
     }
 }
@@ -252,21 +321,24 @@ int parallel_main(int argc, char* argv[]) {
     char* iFile;
     bool binary = false;
     bool symmetric = false;
+    int start = 0;
     if(argc > 1) iFile = argv[1];
+    if(argc > 2) start = atoi(argv[2]);
+    if(argc > 3) if((string) argv[3] == (string) "-result") needResult = true;
     //pass -s flag if graph is already symmetric
-    if(argc > 2) if((string) argv[2] == (string) "-s") symmetric = true;
+    if(argc > 4) if((string) argv[4] == (string) "-s") symmetric = true;
     //pass -b flag if using binary file (also need to pass 2nd arg for now)
-    if(argc > 3) if((string) argv[3] == (string) "-b") binary = true;
+    if(argc > 5) if((string) argv[5] == (string) "-b") binary = true;
 
     if(symmetric) {
 	graph<symmetricVertex> G = 
 	    readGraph<symmetricVertex>(iFile,symmetric,binary); //symmetric graph
-	BFS((intT)1,G);
+	BFS((intT)start,G);
 	G.del(); 
     } else {
 	graph<asymmetricVertex> G = 
 	    readGraph<asymmetricVertex>(iFile,symmetric,binary); //asymmetric graph
-	BFS((intT)1,G);
+	BFS((intT)start,G);
 	G.del();
     }
 }

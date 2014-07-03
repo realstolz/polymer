@@ -133,7 +133,7 @@ void graphHasher(graph<vertex> &GA, Hash_F hash) {
 
     {parallel_for (intT i = 0; i < GA.n; i++) {
 	    intT d = V[i].getOutDegree();
-	    V[i].setFakeDegree(d);
+	    //V[i].setFakeDegree(d);
 	    intE *outEdges = V[i].getOutNeighborPtr();
 	    for (intT j = 0; j < d; j++) {
 		outEdges[j] = hash.hashFunc(outEdges[j]);
@@ -153,7 +153,7 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
     int *offsets = (int *)numa_alloc_local(sizeof(int) * GA.n);
     {parallel_for (intT i = 0; i < GA.n; i++) {
 	    intT d = V[i].getOutDegree();
-	    V[i].setFakeDegree(d);
+	    //V[i].setFakeDegree(d);
 	    newVertexSet[i].setOutDegree(d);
 	    counters[i] = 0;
 	    for (intT j = 0; j < d; j++) {
@@ -224,6 +224,7 @@ void *mapDataArray(int numOfShards, int *sizeArr, int sizeOfOneEle) {
 struct vertices {
     intT n, m;
     int numOfNodes;
+    intT numOfVertices;
     int *numOfVertexOnNode;
     int *offsets;
     int *numOfNonZero;
@@ -233,8 +234,9 @@ struct vertices {
 	this->numOfNodes = _numOfNodes;
 	d = (bool **)malloc(numOfNodes * sizeof(bool*));
 	numOfVertexOnNode = (int *)malloc(numOfNodes * sizeof(int));
-	offsets = (int *)malloc(numOfNodes * sizeof(int));
+	offsets = (int *)malloc((numOfNodes + 1) * sizeof(int));
 	numOfNonZero = (int *)malloc(numOfNodes * sizeof(int));
+	numOfVertices = 0;
     }
 
     void registerArr(int nodeNum, bool* arr, int size) {
@@ -243,11 +245,15 @@ struct vertices {
     }
 
     void calculateOffsets() {
+	for (int i = 0; i < numOfNodes; i++) {
+	    numOfVertices += numOfVertexOnNode[i];
+	}
 	offsets[0] = 0;
 	for (int i = 1; i < numOfNodes; i++) {
 	    offsets[i] = numOfVertexOnNode[i-1] + offsets[i-1];
 	    //printf("offset of %d: %d\n", i, offsets[i]);
 	}
+	offsets[numOfNodes] = numOfVertices;
     }
 
     int getSize(int nodeNum) {
@@ -257,6 +263,15 @@ struct vertices {
     void calculateNumOfNonZero(int nodeNum) {
 	numOfNonZero[nodeNum] = 0;
 	numOfNonZero[nodeNum] = sequence::sum(d[nodeNum], numOfVertexOnNode[nodeNum]);
+    }
+    
+    int numNonzeros() {
+	intT sum = 0;
+	for (int i = 0; i < numOfNodes; i++) {
+	    sum = sum + numOfNonZero[i];
+	}
+	//printf("num of non zero: %d\n", sum);
+	return sum;
     }
 
     bool isEmpty() {
@@ -325,6 +340,7 @@ struct LocalFrontier {
     
     bool inRange(int index) { return (startID <= index && index < endID);}
     inline void setBit(int index, bool val) { b[index-startID] = val;}
+    inline bool getBit(int index) { return b[index-startID];}
 
     bool *swapBitVector(bool *newB) {
 	bool *tmp = b;
@@ -393,11 +409,7 @@ template <class F, class vertex>
 	    currBitVector = frontier->getArr(currNodeNum);
 	    //printf("OK\n");
 	}
-	/*
-	if (i == 657797) {
-	    printf("got you: %d\n", currBitVector[i-currOffset]?1:0);
-	}
-	*/
+	//printf("edgemap: %p\n", currBitVector);
 	if (currBitVector[i-currOffset]) {
 	    intT d = G[i].getFakeDegree();	    
 	    for(intT j=0; j<d; j++){

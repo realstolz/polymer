@@ -48,6 +48,7 @@ int numOfNode = 0;
 bool needResult = false;
 
 pthread_barrier_t barr;
+pthread_barrier_t global_barr;
 
 vertices *Frontier;
 vertices *All;
@@ -175,6 +176,13 @@ void *PageRankSubWorker(void *arg) {
     int start = my_arg->startPos;
     int end = my_arg->endPos;
 
+    Subworker_Partitioner subworker(CORES_PER_NODE);
+    subworker.tid = tid;
+    subworker.subTid = subTid;
+    subworker.dense_start = start;
+    subworker.dense_end = end;
+    subworker.global_barr = &global_barr;
+
     pthread_barrier_wait(local_barr);
     while(1) {
 	if (maxIter > 0 && currIter >= maxIter)
@@ -186,7 +194,7 @@ void *PageRankSubWorker(void *arg) {
 
 	pthread_barrier_wait(local_barr);
 
-	edgeMap(GA, Frontier, PR_F<vertex>(GA.V,delta,nghSum), dummy, GA.m/20, DENSE_FORWARD, false, true, start, end);
+	edgeMap(GA, Frontier, PR_F<vertex>(GA.V,delta,nghSum), dummy, GA.n/20, DENSE_FORWARD, false, true, subworker);
 
 	pthread_barrier_wait(local_barr);
 	pthread_barrier_wait(local_barr);
@@ -202,6 +210,7 @@ void *PageRankSubWorker(void *arg) {
 
 	//reset
 	vertexMap(All,PR_Vertex_Reset(nghSum), tid, subTid, CORES_PER_NODE);
+	output = Frontier->getFrontier(tid);
 	pthread_barrier_wait(local_barr);
 	//swap
 	pthread_barrier_wait(local_barr);
@@ -273,12 +282,15 @@ void *PageRankThread(void *arg) {
 	All = new vertices(numOfT);
     }
 
+    LocalFrontier *current = new LocalFrontier(frontier, rangeLow, rangeHi);
+    LocalFrontier *full = new LocalFrontier(all, rangeLow, rangeHi);
+
     //printf("register %d: %p\n", tid, frontier);
 
     pthread_barrier_wait(&barr);
     
-    Frontier->registerArr(tid, frontier, blockSize);
-    All->registerArr(tid, all, blockSize);
+    Frontier->registerFrontier(tid, current);
+    All->registerFrontier(tid, full);
 
     pthread_barrier_wait(&barr);
 
@@ -407,6 +419,7 @@ void PageRankDelta(graph<vertex> &GA, int maxIter = -1) {
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
+    pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
     int sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
     hasher2 = new Default_Hash_F(GA.n, numOfNode);

@@ -106,6 +106,13 @@ void *BFSSubWorker(void *arg) {
 
     intT numVisited = 0;
 
+    Subworker_Partitioner subworker(CORES_PER_NODE);
+    subworker.tid = tid;
+    subworker.subTid = subTid;
+    subworker.dense_start = start;
+    subworker.dense_end = end;
+    subworker.global_barr = global_barr;
+
     pthread_barrier_wait(local_barr);
 
     if (subTid == 0) 
@@ -127,7 +134,16 @@ void *BFSSubWorker(void *arg) {
 	}
 	pthread_barrier_wait(global_barr);
 	//apply edgemap
-	edgeMap(GA, Frontier, BFS_F(parents), output, GA.m/20, DENSE_FORWARD, false, true, start, end);
+	gettimeofday(&startT, &tz);
+	edgeMap(GA, Frontier, BFS_F(parents), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
+	gettimeofday(&endT, &tz);
+
+	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+	double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+
+	double mapTime = timeEnd - timeStart;
+	if (tid + subTid == 0)
+	    printf("edge map time: %lf\n", mapTime);
 	
 	pthread_barrier_wait(global_barr);
 	if (subTid == 0) {
@@ -136,19 +152,8 @@ void *BFSSubWorker(void *arg) {
 
 	pthread_barrier_wait(global_barr);
 
-	if (subTid == 0) {
-	    gettimeofday(&startT, &tz);
-	    Frontier->calculateNumOfNonZero(tid);
-	    gettimeofday(&endT, &tz);
-	    
-	    double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
-	    double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
-	    
-	    double mapTime = timeEnd - timeStart;
-	    /*
-	    if (tid + subTid == 0)
-		printf("edge map time: %lf\n", mapTime);
-	    */
+	if (subworker.isSubMaster()) {
+	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
 	pthread_barrier_wait(global_barr);
     }
@@ -194,11 +199,13 @@ void *BFSWorker(void *arg) {
 
     for(intT i=0;i<blockSize;i++) frontier[i] = false;
 
+    LocalFrontier *current = new LocalFrontier(frontier, rangeLow, rangeHi);
+
     if (tid == 0)
 	Frontier = new vertices(numOfT);
 
     pthread_barrier_wait(&barr);
-    Frontier->registerArr(tid, frontier, blockSize);
+    Frontier->registerFrontier(tid, current);
     pthread_barrier_wait(&barr);
 
     if (tid == 0) {
@@ -275,7 +282,7 @@ struct PR_Hash_F {
 
 template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
-    numOfNode = 1;//numa_num_configured_nodes();
+    numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);

@@ -72,7 +72,7 @@ void BFS(intT start, graph<vertex> GA) {
 
     double mapTime = timeEnd - timeStart;
     
-    //printf("edge map time: %lf\n", mapTime);
+    printf("edge map time: %lf\n", mapTime);
 
     Frontier.del();
     Frontier = output; //set new frontier

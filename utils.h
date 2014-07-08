@@ -295,3 +295,11 @@ inline void writeAdd(ET *a, ET b) {
   do {oldV = *a; newV = oldV + b;}
   while (!CAS(a, oldV, newV));
 }
+
+template <class ET>
+inline ET fetchAndAdd(ET *a, ET b) {
+    volatile ET newV, oldV;
+    do {oldV = *a; newV = oldV + b;}
+    while (!CAS(a, oldV, newV));
+    return oldV;
+}

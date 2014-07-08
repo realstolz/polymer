@@ -279,6 +279,7 @@ vertices edgeMap(graph<vertex> GA, vertices V, F f, intT threshold = -1,
   uintT outDegrees = sequence::plusReduce(degrees, m);
   edgesTraversed += outDegrees;
   if (outDegrees == 0) return vertices(numVertices);
+  //printf("switch? : %d\n", m);
   if (m + outDegrees > threshold) { 
     V.toDense();
     free(degrees);

@@ -29,6 +29,7 @@
 #include <string>
 #include <algorithm>
 #include <sys/mman.h>
+
 #include "parallel.h"
 #include "gettime.h"
 #include "utils.h"
@@ -36,6 +37,7 @@
 #include "IO.h"
 
 #include <numa.h>
+#include <pthread.h>
 
 using namespace std;
 
@@ -47,6 +49,16 @@ using namespace std;
 the vertices set should be set by each node
 */
 
+inline int SXCHG(char *ptr, char newv) {
+  char ret = newv;
+  __asm__ __volatile__ (
+                "  xchgb %0,%1\n"
+                : "=r" (ret)
+		: "m" (*(volatile char *)ptr), "0" (newv)
+                : "memory");
+  return ret;
+}
+
 int roundUp(double x) {
     int ones = x / 1;
     double others = x - ones;
@@ -55,6 +67,21 @@ int roundUp(double x) {
     }
     return ones;
 }
+
+struct Subworker_Partitioner {
+    int tid;
+    int subTid;
+    int numOfSub;
+    int dense_start;
+    int dense_end;
+    pthread_barrier_t *global_barr;
+    Subworker_Partitioner(int nSub):numOfSub(nSub){}
+    
+    inline bool isMaster() {return (tid + subTid == 0);}
+    inline bool isSubMaster() {return (subTid == 0);}
+    inline intT getStartPos(intT m) {return subTid * (m / numOfSub);}
+    inline intT getEndPos(intT m) {return (subTid == numOfSub - 1) ? m : ((subTid + 1) * (m / numOfSub));}
+};
 
 struct Default_Hash_F {
     int shardNum;
@@ -219,6 +246,66 @@ void *mapDataArray(int numOfShards, int *sizeArr, int sizeOfOneEle) {
     return toBeReturned;
 }
 
+struct LocalFrontier {
+    intT n, m;
+    intT outEdgesCount;
+    int startID;
+    int endID;
+    bool *b;
+    intT *s;
+    bool isDense;
+    
+    LocalFrontier(bool *_b, int start, int end):b(_b), startID(start), endID(end), n(end - start), m(0), isDense(true), s(NULL), outEdgesCount(0){}
+    
+    bool inRange(int index) { return (startID <= index && index < endID);}
+    inline void setBit(int index, bool val) { b[index-startID] = val;}
+    inline bool getBit(int index) { return b[index-startID];}
+
+    void toSparse() {
+	if (s == NULL) {
+	    _seq<intT> R = sequence::packIndex(b, n);
+	    s = R.A;
+	    m = R.n;
+	    if (m == 0) {
+		printf("%p\n", s);
+	    }
+	}
+	isDense = false;
+    }
+
+    void toDense() {
+	if (!isDense) {
+	    {parallel_for(intT i=0;i<n;i++) b[i] = false;}
+	    {parallel_for(intT i=0;i<m;i++) b[s[i] - startID] = true;}
+	}
+	//printf("hehe\n");
+	isDense = true;
+    }
+
+    void setSparse(intT _m, intT *_s) {
+	if (s != NULL) {
+	    free(s);
+	}
+	m = _m;
+	s = _s;
+	isDense = false;
+    }
+
+    bool *swapBitVector(bool *newB) {
+	bool *tmp = b;
+	b = newB;
+	return tmp;
+    }
+
+    void clearFrontier() {
+	if (s != NULL) {
+	    free(s);
+	}
+	s = NULL;
+	m = 0;
+	outEdgesCount = 0;
+    }
+};
 
 //*****VERTEX OBJECT*****
 struct vertices {
@@ -229,19 +316,59 @@ struct vertices {
     int *offsets;
     int *numOfNonZero;
     bool** d;
+    LocalFrontier **frontiers;
+    bool isDense;
     
     vertices(int _numOfNodes) {
 	this->numOfNodes = _numOfNodes;
 	d = (bool **)malloc(numOfNodes * sizeof(bool*));
+	frontiers = (LocalFrontier **)malloc(numOfNodes * sizeof(LocalFrontier*));
 	numOfVertexOnNode = (int *)malloc(numOfNodes * sizeof(int));
 	offsets = (int *)malloc((numOfNodes + 1) * sizeof(int));
 	numOfNonZero = (int *)malloc(numOfNodes * sizeof(int));
 	numOfVertices = 0;
     }
-
-    void registerArr(int nodeNum, bool* arr, int size) {
+    /*
+    void registerArr(int nodeNum, bool *arr, int size) {
 	d[nodeNum] = arr;
 	numOfVertexOnNode[nodeNum] = size;
+    }
+    */
+    void registerFrontier(int nodeNum, LocalFrontier *frontier) {
+	frontiers[nodeNum] = frontier;
+	numOfVertexOnNode[nodeNum] = frontier->n;
+    }
+
+    void toDense() {
+	if (isDense)
+	    return;
+	else
+	    isDense = true;
+	for (int i = 0; i< numOfNodes; i++) {
+	    //printf("todense %d start m = %d n = %d\n", i, frontiers[i]->s[frontiers[i]->m - 1], frontiers[i]->n);
+	    frontiers[i]->toDense();
+	}
+    }
+
+    void toSparse() {
+	if (!isDense)
+	    return;
+	else
+	    isDense = false;
+	for (int i = 0; i< numOfNodes; i++) {
+	    if (frontiers[i]->isDense) {
+		//printf("real convert\n");
+	    }
+	    frontiers[i]->toSparse();
+	}
+    }
+
+    intT getEdgeStat() {
+	intT sum = 0;
+	for (int i = 0; i < numOfNodes; i++) {
+	    sum = sum + frontiers[i]->m + frontiers[i]->outEdgesCount;
+	}
+	return sum;
     }
 
     void calculateOffsets() {
@@ -262,7 +389,13 @@ struct vertices {
 
     void calculateNumOfNonZero(int nodeNum) {
 	numOfNonZero[nodeNum] = 0;
-	numOfNonZero[nodeNum] = sequence::sum(d[nodeNum], numOfVertexOnNode[nodeNum]);
+	if (false && frontiers[nodeNum]->isDense) {
+	    numOfNonZero[nodeNum] = sequence::sum(frontiers[nodeNum]->b, numOfVertexOnNode[nodeNum]);
+	    frontiers[nodeNum]->m = numOfNonZero[nodeNum];
+	} else {
+	    numOfNonZero[nodeNum] = frontiers[nodeNum]->m;
+	}
+	//printf("non zero count of %d: %d\n", nodeNum, frontiers[nodeNum]->m);
     }
     
     int numNonzeros() {
@@ -301,7 +434,7 @@ struct vertices {
 	    accum += numOfVertexOnNode[i];
 	    i++;
 	}
-	*(d[i] + (index - accum)) = bit;
+	*(frontiers[i]->b + (index - accum)) = bit;
     }
 
     bool getBit(int index) {
@@ -311,11 +444,24 @@ struct vertices {
 	    accum += numOfVertexOnNode[i];
 	    i++;
 	}
-	return *(d[i] + (index - accum));
+	return *(frontiers[i]->b + (index - accum));
     }
 
     bool *getArr(int nodeNum) {
-	return d[nodeNum];
+	return frontiers[nodeNum]->b;
+    }
+
+    LocalFrontier *getFrontier(int nodeNum) {
+	return frontiers[nodeNum];
+    }
+
+    LocalFrontier *swapFrontier(int nodeNum, LocalFrontier *newOne) {
+	if (nodeNum == 0) {
+	    isDense = newOne->isDense;
+	}
+	LocalFrontier *oldOne =  frontiers[nodeNum];
+	frontiers[nodeNum] = newOne;
+	return oldOne;
     }
 
     bool eq (vertices& b) {
@@ -328,24 +474,6 @@ struct vertices {
 	free(offsets);
 	free(numOfVertexOnNode);
 	free(d);
-    }
-};
-
-struct LocalFrontier {
-    int startID;
-    int endID;
-    bool *b;
-    
-    LocalFrontier(bool *_b, int start, int end):b(_b), startID(start), endID(end){}
-    
-    bool inRange(int index) { return (startID <= index && index < endID);}
-    inline void setBit(int index, bool val) { b[index-startID] = val;}
-    inline bool getBit(int index) { return b[index-startID];}
-
-    bool *swapBitVector(bool *newB) {
-	bool *tmp = b;
-	b = newB;
-	return tmp;
     }
 };
 
@@ -380,7 +508,7 @@ bool* edgeMapDense(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *nex
 }
 
 template <class F, class vertex>
-    bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, int start = 0, int end = 0) {
+bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, int start = 0, int end = 0) {
     intT numVertices = GA.n;
     vertex *G = GA.V;
 
@@ -389,6 +517,10 @@ template <class F, class vertex>
     int nextSwitchPoint = frontier->getSize(0);
     int currOffset = 0;
     int counter = 0;
+
+    intT m = 0;
+    intT outEdgesCount = 0;
+    bool *nextB = next->b;
     
     int startPos = 0;
     int endPos = numVertices;
@@ -414,10 +546,15 @@ template <class F, class vertex>
 	    intT d = G[i].getFakeDegree();	    
 	    for(intT j=0; j<d; j++){
 		uintT ngh = G[i].getOutNeighbor(j);
-		if (ngh == 0) {
-		    counter++;
-		}
 		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh)) {
+		    /*
+		    if (!next->getBit(ngh)) {
+			m++;
+			outEdgesCount += G[ngh].getOutDegree();
+		    }
+		    */
+		    //int idx = ngh - next->startID;
+		    //m += 1 - SXCHG((char *)&(nextB[idx]), 1);
 		    next->setBit(ngh, true);
 		}
 		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getOutNeighbor(j+1)), 1, 0);
@@ -426,63 +563,164 @@ template <class F, class vertex>
 	//__builtin_prefetch(f.nextPrefetchAddr(i+1), 0, 3);
 	//__builtin_prefetch(G[i+3].getOutNeighborPtr(), 0, 3);
     }
-    //printf("edgeMap: %d\n", counter);
+    //writeAdd(&(next->m), m);
+    //writeAdd(&(next->outEdgesCount), outEdgesCount);
+    //printf("edgeMap: %d %d\n", m, outEdgesCount);
     return NULL;
+}
+
+template <class F, class vertex>
+void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, int start = 0, int end = 0) {
+    vertex *V = GA.V;
+    if (part) {
+	if (start == 0) {
+	    intT totM = frontier->numNonzeros();
+	    intT degreeCount = 0;
+	    intT *degrees = (intT *)malloc(sizeof(intT) * totM);
+	    int hugeOffsets[frontier->numOfNodes];
+	    hugeOffsets[0] = 0;
+	    for (int i = 0 ; i < frontier->numOfNodes-1; i++) {
+		hugeOffsets[i+1] = hugeOffsets[i] + frontier->frontiers[i]->m;
+	    }
+	    {parallel_for (int i = 0; i < frontier->numOfNodes; i++) {
+		    int o = hugeOffsets[i];
+		    intT m = frontier->frontiers[i]->m;
+		    intT *s = frontier->frontiers[i]->s;
+		    {parallel_for (int j = 0; j < m; j++) {
+			    intT d = V[s[j]].getFakeDegree();
+			    degrees[o+j] = d;
+			    //fetchAndAdd(&degreeCount, d);
+			}}
+		}}
+	    //printf("sparse mode %d: %d\n", next->startID, degreeCount);
+	    intT newM = 0;
+	    intT *offsets = degrees;
+	    degreeCount = sequence::plusScan(offsets, degrees, totM);
+	    if (degreeCount <= 0) {
+		next->setSparse(0, NULL);
+		return;
+	    }
+	    intT *outEdges = (intT *)malloc(sizeof(intT) * degreeCount);
+	    
+	    {parallel_for (int i = 0; i < frontier->numOfNodes; i++) {
+		    int o1 = hugeOffsets[i];
+		    intT m = frontier->frontiers[i]->m;
+		    intT *s = frontier->frontiers[i]->s;
+		    {parallel_for (int j = 0; j < m; j++) {
+			    intT o2 = offsets[o1+j];
+			    intT d = V[s[j]].getFakeDegree();
+			    if (d < 1000) {
+				for (int k = 0; k < d; k++) {
+				    uintT ngh = V[s[j]].getOutNeighbor(k);
+				    if (f.cond(ngh) && f.updateAtomic(i, ngh)) {
+					//intT idx = fetchAndAdd(&newM, 1);
+					//newS[idx] = ngh;
+					outEdges[o2+k] = ngh;
+				    } else {
+					outEdges[o2+k] = -1;
+				    }
+				}
+			    } else {
+				{parallel_for (int k = 0; k < d; k++) {
+					uintT ngh = V[s[j]].getOutNeighbor(k);
+					if (f.cond(ngh) && f.updateAtomic(i, ngh)) {
+					    //intT idx = fetchAndAdd(&newM, 1);
+					    //newS[idx] = ngh;
+					    outEdges[o2+k] = ngh;
+					} else {
+					    outEdges[o2+k] = -1;
+					}
+				    }}
+			    }
+			}}
+		}}
+	    intT* nextIndices = (intT *)malloc(sizeof(intT) * degreeCount);
+	    newM = sequence::filter(outEdges, nextIndices, degreeCount, nonNegF());
+	    next->setSparse(newM, nextIndices);
+	}
+    }
 }
 
 static int edgesTraversed = 0;
 
-void switchFrontier(int nodeNum, vertices *V, LocalFrontier *next) {
-    bool *current = V->getArr(nodeNum);
+void switchFrontier(int nodeNum, vertices *V, LocalFrontier* &next) {
+    LocalFrontier *current = V->getFrontier(nodeNum);
     intT size = V->getSize(nodeNum);
+    /*
     for (intT i = 0; i < size; i++) {
-	current[i] = false;
+	(current->b)[i] = false;
     }
-    
-    bool *tmp = next->swapBitVector(V->getArr(nodeNum));
-    V->registerArr(nodeNum, tmp, V->getSize(nodeNum));
+    */
+    LocalFrontier *newF = V->swapFrontier(nodeNum, next);
+    next = newF;
+    next->clearFrontier();
+    //V->registerArr(nodeNum, tmp, V->getSize(nodeNum));
 }
 
 // decides on sparse or dense base on number of nonzeros in the active vertices
 template <class F, class vertex>
 void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
-	     char option=DENSE, bool remDups=false, bool part = false, int start = 0, int end = 0) {
+	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = NULL) {
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
-    vertex *G = GA.V;
-    //intT m = V.numNonzeros();
+    vertex *G = GA.V;    
+    intT m = 1;//V->numNonzeros();
     
     /*
-      if (numVertices != V.numRows()) {
-      cout << "edgeMap: Sizes Don't match" << endl;
-      abort();
-      }
+    if (subworker.isMaster())
+	printf("%d\n", m);
     */
-    
-    /*
-    // used to generate nonzero indices to get degrees
-    uintT* degrees = newA(uintT, m);
-    vertex* frontierVertices;
-    V.toSparse();
-    frontierVertices = newA(vertex,m);
-    {parallel_for (long i=0; i < m; i++){
-    vertex v = G[V.s[i]];
-    degrees[i] = v.getOutDegree();
-    frontierVertices[i] = v;
-    }}
-    uintT outDegrees = sequence::plusReduce(degrees, m);
-    edgesTraversed += outDegrees;
-    if (outDegrees == 0) return vertices(numVertices);
-  */
-    
-    
-    bool* R = (option == DENSE_FORWARD) ? 
-	edgeMapDenseForward(GA, V, f, next, part, start, end) : 
-	edgeMapDense(GA, V, f, next, option);
-    //cout << "size (D) = " << v1.m << endl;    
+    int start = subworker.dense_start;
+    int end = subworker.dense_end;
+
+    if (m >= threshold) {
+	//Dense part
+	if (subworker.isMaster()) {
+	    //V->toDense();
+	}
+
+	pthread_barrier_wait(subworker.global_barr);
+	
+	bool* R = (option == DENSE_FORWARD) ? 
+	    edgeMapDenseForward(GA, V, f, next, part, start, end) : 
+	    edgeMapDense(GA, V, f, next, option);
+	next->isDense = true;
+    } else {
+	//Sparse part
+	if (subworker.isMaster()) {
+	    V->toSparse();
+	}
+
+	pthread_barrier_wait(subworker.global_barr);
+
+	edgeMapSparse(GA, V, f, next, part, start, end);
+    }
 }
 
 //*****VERTEX FUNCTIONS*****
+
+void vertexCounter(LocalFrontier *frontier, int nodeNum, int subNum, int totalSub) {
+    if (!frontier->isDense)
+	return;
+    
+    int size = frontier->endID - frontier->startID;
+    int offset = frontier->startID;
+    bool *b = frontier->b;
+    int subSize = size / totalSub;
+    int startPos = subSize * subNum;
+    int endPos = subSize * (subNum + 1);
+    if (subNum == totalSub - 1) {
+	endPos = size;
+    }
+
+    int m = 0;
+
+    for (int i = startPos; i < endPos; i++) {
+	if (b[i])
+	    m++;
+    }
+    writeAdd(&(frontier->m), m);
+}
 
 template <class F>
 void vertexMap(vertices *V, F add, int nodeNum) {
@@ -537,13 +775,24 @@ void vertexFilter(vertices *V, F filter, int nodeNum, int subNum, int totalSub, 
 	endPos = size;
     }
 
+    bool *dst = result->b;
+    int m = 0;
+    /*
+    if (size != result->endID - result->startID || offset != result->startID)
+	printf("oops\n");
+    */
     for (int i = startPos; i < endPos; i++) {
-	result->setBit(i+offset, b[i] ? (filter(i+offset)) : (false));
-	/*
-	if (b[i])
-	    result->setBit(i, filter(i + offset));
-	*/
+	//result->setBit(i+offset, b[i] ? (filter(i+offset)) : (false));	
+	if (b[i]) {
+	    dst[i] = filter(i + offset);
+	    if (dst[i])
+		m++;
+	} else {
+	    dst[i] = false;
+	}
     }
+    //printf("filter over\n");
+    writeAdd(&(result->m), m);
 }
 
 //*****WEIGHTED EDGE FUNCTIONS*****

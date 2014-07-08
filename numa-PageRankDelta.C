@@ -194,7 +194,7 @@ void *PageRankSubWorker(void *arg) {
 
 	pthread_barrier_wait(local_barr);
 
-	edgeMap(GA, Frontier, PR_F<vertex>(GA.V,delta,nghSum), dummy, GA.n/20, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, PR_F<vertex>(GA.V,delta,nghSum), dummy, 0, DENSE_FORWARD, false, true, subworker);
 
 	pthread_barrier_wait(local_barr);
 	pthread_barrier_wait(local_barr);

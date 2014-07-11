@@ -130,7 +130,7 @@ void *BFSSubWorker(void *arg) {
 	}
 
 	if (subTid == 0) {
-	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	pthread_barrier_wait(global_barr);
 	//apply edgemap
@@ -142,12 +142,16 @@ void *BFSSubWorker(void *arg) {
 	double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
 
 	double mapTime = timeEnd - timeStart;
-	if (tid + subTid == 0)
+	if (tid + subTid == 0) {
 	    printf("edge map time: %lf\n", mapTime);
+	}
 	
-	pthread_barrier_wait(global_barr);
 	if (subTid == 0) {
+	    pthread_barrier_wait(global_barr);
 	    switchFrontier(tid, Frontier, output); //set new frontier
+	} else {
+	    output = Frontier->getFrontier(tid);
+	    pthread_barrier_wait(global_barr);
 	}
 
 	pthread_barrier_wait(global_barr);
@@ -156,6 +160,8 @@ void *BFSSubWorker(void *arg) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
 	pthread_barrier_wait(global_barr);
+	if (subworker.isMaster())
+	    printf("nextNum: %d\n", Frontier->numNonzeros());
     }
 
     if (tid + subTid == 0) {
@@ -212,6 +218,11 @@ void *BFSWorker(void *arg) {
 	Frontier->calculateOffsets();
 	Frontier->setBit(my_arg->start, true);
 	parents[my_arg->start] = my_arg->start;
+    }
+
+    if (my_arg->start >= rangeLow && my_arg->start < rangeHi) {
+	current->m = 1;
+	current->outEdgesCount = GA.V[my_arg->start].getOutDegree();
     }
     
     bool *next = (bool *)numa_alloc_local(sizeof(bool) * blockSize);
@@ -282,7 +293,7 @@ struct PR_Hash_F {
 
 template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
-    numOfNode = numa_num_configured_nodes();
+    numOfNode = 1;//numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);

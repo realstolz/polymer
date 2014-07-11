@@ -75,6 +75,7 @@ struct Subworker_Partitioner {
     int dense_start;
     int dense_end;
     pthread_barrier_t *global_barr;
+    pthread_barrier_t *local_barr;
     Subworker_Partitioner(int nSub):numOfSub(nSub){}
     
     inline bool isMaster() {return (tid + subTid == 0);}
@@ -143,6 +144,51 @@ void partitionByDegree(graph<vertex> GA, int numOfShards, int *sizeArr, int size
 	    sizeArr[counter]++;
 	    tmpSizeCounter++;
 	}
+	if (accum[counter] >= averageDegree && counter < numOfShards - 1) {
+	    counter++;
+	    //cout << tmpSizeCounter / (double)(PAGESIZE / sizeOfOneEle) << endl;
+	    tmpSizeCounter = 0;
+	}
+    }
+    
+    free(degrees);
+}
+
+template <class vertex>
+void subPartitionByDegree(graph<vertex> GA, int numOfShards, int *sizeArr, int sizeOfOneEle, bool useOutDegree=false, bool useFakeDegree=false) {
+    const intT n = GA.n;
+    int *degrees = newA(int, n);
+
+    int shardSize = n / numOfShards;
+
+    if (useFakeDegree) {
+	{parallel_for(intT i = 0; i < n; i++) degrees[i] = GA.V[i].getFakeDegree();}
+    } else {
+	if (useOutDegree) {
+	    {parallel_for(intT i = 0; i < n; i++) degrees[i] = GA.V[i].getOutDegree();}
+	} else {
+	    {parallel_for(intT i = 0; i < n; i++) degrees[i] = GA.V[i].getInDegree();}
+	}
+    }
+
+    int accum[numOfShards];
+    for (int i = 0; i < numOfShards; i++) {
+	accum[i] = 0;
+	sizeArr[i] = 0;
+    }
+
+    long totalDegree = 0;
+    for (intT i = 0; i < n; i++) {
+	totalDegree += degrees[i];
+    }
+
+    int averageDegree = totalDegree / numOfShards;
+    int counter = 0;
+    int tmpSizeCounter = 0;
+    for (intT i = 0; i < n; i++) {
+	accum[counter] += degrees[i];
+	sizeArr[counter]++;
+	tmpSizeCounter++;
 	if (accum[counter] >= averageDegree && counter < numOfShards - 1) {
 	    counter++;
 	    //cout << tmpSizeCounter / (double)(PAGESIZE / sizeOfOneEle) << endl;
@@ -247,12 +293,14 @@ void *mapDataArray(int numOfShards, int *sizeArr, int sizeOfOneEle) {
 }
 
 struct LocalFrontier {
-    intT n, m;
+    intT n;
+    intT m;
     intT outEdgesCount;
     int startID;
     int endID;
     bool *b;
     intT *s;
+    intT *tmp;
     bool isDense;
     
     LocalFrontier(bool *_b, int start, int end):b(_b), startID(start), endID(end), n(end - start), m(0), isDense(true), s(NULL), outEdgesCount(0){}
@@ -262,12 +310,16 @@ struct LocalFrontier {
     inline bool getBit(int index) { return b[index-startID];}
 
     void toSparse() {
-	if (s == NULL) {
+	if (isDense) {
+	    if (s != NULL)
+		free(s);
 	    _seq<intT> R = sequence::packIndex(b, n);
 	    s = R.A;
 	    m = R.n;
 	    if (m == 0) {
 		printf("%p\n", s);
+	    } else {
+		printf("M is %d\n", m);
 	    }
 	}
 	isDense = false;
@@ -327,6 +379,7 @@ struct vertices {
 	offsets = (int *)malloc((numOfNodes + 1) * sizeof(int));
 	numOfNonZero = (int *)malloc(numOfNodes * sizeof(int));
 	numOfVertices = 0;
+	m = -1;
     }
     /*
     void registerArr(int nodeNum, bool *arr, int size) {
@@ -337,6 +390,7 @@ struct vertices {
     void registerFrontier(int nodeNum, LocalFrontier *frontier) {
 	frontiers[nodeNum] = frontier;
 	numOfVertexOnNode[nodeNum] = frontier->n;
+	isDense = frontier->isDense;
     }
 
     void toDense() {
@@ -366,7 +420,7 @@ struct vertices {
     intT getEdgeStat() {
 	intT sum = 0;
 	for (int i = 0; i < numOfNodes; i++) {
-	    sum = sum + frontiers[i]->m + frontiers[i]->outEdgesCount;
+	    sum = sum + frontiers[i]->outEdgesCount;
 	}
 	return sum;
     }
@@ -387,6 +441,10 @@ struct vertices {
 	return numOfVertexOnNode[nodeNum];
     }
 
+    int getSparseSize(int nodeNum) {
+	return numOfNonZero[nodeNum];
+    }
+
     void calculateNumOfNonZero(int nodeNum) {
 	numOfNonZero[nodeNum] = 0;
 	if (false && frontiers[nodeNum]->isDense) {
@@ -399,26 +457,42 @@ struct vertices {
     }
     
     int numNonzeros() {
-	intT sum = 0;
-	for (int i = 0; i < numOfNodes; i++) {
-	    sum = sum + numOfNonZero[i];
+	if (m < 0) {
+	    intT sum = 0;
+	    for (int i = 0; i < numOfNodes; i++) {
+		sum = sum + numOfNonZero[i];
+	    }
+	    //printf("num of non zero: %d\n", sum);
+	    m = sum;
 	}
-	//printf("num of non zero: %d\n", sum);
-	return sum;
+	return m;
     }
 
     bool isEmpty() {
-	int sum = 0;
-	for (int i = 0; i < numOfNodes; i++) {
-	    sum = sum + numOfNonZero[i];
+	if (m < 0) {
+	    int sum = 0;
+	    for (int i = 0; i < numOfNodes; i++) {
+		sum = sum + numOfNonZero[i];
+	    }
+	    m = sum;
 	}
-	return (sum == 0);
+	return (m == 0);
     }
 
     int getNodeNumOfIndex(int index) {
 	int result = 0;
 	while (result < numOfNodes && offsets[result] <= index) {
 	    result++;
+	}
+	return result - 1;
+    }
+
+    int getNodeNumOfSparseIndex(int index) {
+	int result = 0;
+	int accum = 0;
+	while (result < numOfNodes && accum <= index) {
+	    accum += numOfNonZero[result];
+	    result++;	    
 	}
 	return result - 1;
     }
@@ -451,6 +525,10 @@ struct vertices {
 	return frontiers[nodeNum]->b;
     }
 
+    intT *getSparseArr(int nodeNum) {
+	return frontiers[nodeNum]->s;
+    }
+
     LocalFrontier *getFrontier(int nodeNum) {
 	return frontiers[nodeNum];
     }
@@ -461,6 +539,7 @@ struct vertices {
 	}
 	LocalFrontier *oldOne =  frontiers[nodeNum];
 	frontiers[nodeNum] = newOne;
+	m = -1;
 	return oldOne;
     }
 
@@ -542,8 +621,9 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
 	    //printf("OK\n");
 	}
 	//printf("edgemap: %p\n", currBitVector);
+	m += G[i].getFakeDegree();
 	if (currBitVector[i-currOffset]) {
-	    intT d = G[i].getFakeDegree();	    
+	    intT d = G[i].getFakeDegree();
 	    for(intT j=0; j<d; j++){
 		uintT ngh = G[i].getOutNeighbor(j);
 		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh)) {
@@ -567,6 +647,102 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     //writeAdd(&(next->outEdgesCount), outEdgesCount);
     //printf("edgeMap: %d %d\n", m, outEdgesCount);
     return NULL;
+}
+
+template <class F, class vertex>
+void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker = NULL) {
+    vertex *V = GA.V;
+    if (part) {
+	intT currM = frontier->numNonzeros();
+	int startPos = subworker.getStartPos(currM);
+	int endPos = subworker.getEndPos(currM);
+
+	intT nextM = 0;
+	intT nextEdgesCount = 0;
+	intT *nextFrontier = NULL;
+	pthread_barrier_wait(subworker.global_barr);
+
+	if (startPos < endPos) {
+	    //printf("have ele: %d to %d %d, %p\n", startPos, endPos, subworker.tid, next);
+	    nextFrontier = (intT *)malloc(sizeof(intT) * frontier->getEdgeStat());
+	    
+	    int currNodeNum = frontier->getNodeNumOfSparseIndex(startPos);
+	    int offset = 0;
+	    for (int i = 0; i < currNodeNum; i++) {
+		offset += frontier->getSparseSize(i);
+	    }
+	    //printf("nodeNum: %d %d\n", currNodeNum, endPos);
+	    intT *currActiveList = frontier->getSparseArr(currNodeNum);
+	    int lengthOfCurr = frontier->getSparseSize(currNodeNum);
+	    pthread_barrier_wait(subworker.global_barr);
+	    if (subworker.isMaster()) {
+		printf("reach here\n");
+	    }
+	    for (int i = startPos; i < endPos; i++) {
+		if (lengthOfCurr <= 0) {
+		    while (currNodeNum + 1 < frontier->numOfNodes && lengthOfCurr <= 0) {
+			offset += frontier->getSparseSize(currNodeNum);
+			currNodeNum++;
+			lengthOfCurr = frontier->getSparseSize(currNodeNum);
+		    }
+		    if (currNodeNum >= frontier->numOfNodes || lengthOfCurr <= 0) {
+			printf("oops\n");
+		    }
+		    currActiveList = frontier->getSparseArr(currNodeNum);
+		}
+		printf("s: %p %d\n", currActiveList, i-offset);
+		intT idx = currActiveList[i - offset];
+		printf("vertex: %d\n", idx);
+		intT d = V[idx].getFakeDegree();
+		for (intT j = 0; j < d; j++) {
+		    uintT ngh = V[idx].getOutNeighbor(j);
+		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
+			//add to active list
+			printf("out edge # %d: %d -> %d\n", nextM, idx, ngh);
+			nextFrontier[nextM] = ngh;
+			nextM++;
+			nextEdgesCount += V[ngh].getFakeDegree();
+		    }
+		}
+		lengthOfCurr--;
+		//printf("nextM: %d %d\n", nextM, nextEdgesCount);
+	    }
+	} else {
+	    pthread_barrier_wait(subworker.global_barr);
+	    if (subworker.isMaster()) {
+		printf("reach here\n");
+	    }
+	    nextM = 0;
+	    nextEdgesCount = 0;
+	}
+	writeAdd(&(next->m), nextM);
+	writeAdd(&(next->outEdgesCount), nextEdgesCount);
+	if (subworker.isSubMaster()) {
+	    intT *offsets = (intT *)malloc(sizeof(intT) * subworker.numOfSub);
+	    next->tmp = offsets;
+	}
+	pthread_barrier_wait(subworker.global_barr);
+	next->tmp[subworker.subTid] = nextM;
+	if (subworker.isSubMaster()) {
+	    printf("next of %d: %d %d\n", subworker.tid, next->m, nextM);
+	    if (next->m > 0) {
+		intT *sparseArr = (intT *)malloc(sizeof(intT) * next->m);
+		next->s = sparseArr;
+	    }
+	    next->isDense = false;
+	}
+	pthread_barrier_wait(subworker.global_barr);
+	if (nextM > 0) {
+	    intT fillOffset = 0;
+	    for (int i = 0; i < subworker.subTid; i++) {
+		fillOffset += next->tmp[i];
+	    }
+	    for (intT i = 0; i < nextM; i++) {
+		next->s[i+fillOffset] = nextFrontier[i];
+		//printf("filled to %d of %d: %d\n", i + fillOffset, subworker.tid, nextFrontier[i]);
+	    }
+	}
+    }
 }
 
 template <class F, class vertex>
@@ -676,7 +852,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     if (m >= threshold) {
 	//Dense part
 	if (subworker.isMaster()) {
-	    //V->toDense();
+	    V->toDense();
 	}
 
 	pthread_barrier_wait(subworker.global_barr);
@@ -692,14 +868,14 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	}
 
 	pthread_barrier_wait(subworker.global_barr);
-
-	edgeMapSparse(GA, V, f, next, part, start, end);
+	
+	edgeMapSparseV2(GA, V, f, next, part, subworker);
     }
 }
 
 //*****VERTEX FUNCTIONS*****
-
-void vertexCounter(LocalFrontier *frontier, int nodeNum, int subNum, int totalSub) {
+template<class vertex>
+void vertexCounter(graph<vertex> GA, LocalFrontier *frontier, int nodeNum, int subNum, int totalSub) {
     if (!frontier->isDense)
 	return;
     
@@ -714,12 +890,16 @@ void vertexCounter(LocalFrontier *frontier, int nodeNum, int subNum, int totalSu
     }
 
     int m = 0;
+    intT outEdges = 0;
 
     for (int i = startPos; i < endPos; i++) {
-	if (b[i])
+	if (b[i]) {
+	    outEdges += GA.V[i+offset].getFakeDegree();
 	    m++;
+	}
     }
     writeAdd(&(frontier->m), m);
+    writeAdd(&(frontier->outEdgesCount), outEdges);
 }
 
 template <class F>

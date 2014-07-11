@@ -164,6 +164,7 @@ void *PageRankSubWorker(void *arg) {
     }
 
     pthread_barrier_wait(local_barr);
+    pthread_barrier_wait(&global_barr);
     while(1) {
 	if (maxIter > 0 && currIter >= maxIter)
             break;
@@ -174,26 +175,41 @@ void *PageRankSubWorker(void *arg) {
 	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	
-	pthread_barrier_wait(local_barr);
+	pthread_barrier_wait(&global_barr);
+	//pthread_barrier_wait(local_barr);
 
         edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
 
-	pthread_barrier_wait(local_barr);
+	pthread_barrier_wait(&global_barr);
+	//pthread_barrier_wait(local_barr);
 	if (subTid == 0) {
 	    //printf("next active: %d\n", output->m);
 	}
 
         vertexMap(Frontier, PR_Vertex_F(p_curr, p_next, damping, n), tid, subTid, CORES_PER_NODE);
-	//vertexCounter(output, tid, subTid, CORES_PER_NODE);
+	//vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
+	output->m = 1;
 
-	pthread_barrier_wait(local_barr);
+	pthread_barrier_wait(&global_barr);	
+	//pthread_barrier_wait(local_barr);
 
 	vertexMap(Frontier,PR_Vertex_Reset(p_curr), tid, subTid, CORES_PER_NODE);
-	output = Frontier->getFrontier(tid);
-	pthread_barrier_wait(local_barr);
+	pthread_barrier_wait(&global_barr);
+	//pthread_barrier_wait(local_barr);
 	swap(p_curr, p_next);
-	pthread_barrier_wait(local_barr);
+	if (subworker.isSubMaster()) {
+	    pthread_barrier_wait(&global_barr);
+	    switchFrontier(tid, Frontier, output);
+	} else {
+	    output = Frontier->getFrontier(tid);
+	    pthread_barrier_wait(&global_barr);
+	}
+	//pthread_barrier_wait(local_barr);
     }
+    if (subworker.isMaster()) {
+	p_ans = p_curr;
+    }
+    pthread_barrier_wait(local_barr);
     return NULL;
 }
 
@@ -216,8 +232,15 @@ void *PageRankThread(void *arg) {
 
     graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
 
-    while (shouldStart == 0) ;
+    int sizeOfShards[CORES_PER_NODE];
 
+    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, false);
+    
+    for (int i = 0; i < CORES_PER_NODE; i++) {
+	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
+    }
+
+    while (shouldStart == 0) ;
     pthread_barrier_wait(&timerBarr);
     printf("over filtering\n");
     /*
@@ -259,7 +282,6 @@ void *PageRankThread(void *arg) {
     for(intT i=rangeLow;i<rangeHi;i++) p_curr[i] = one_over_n;
     for(intT i=rangeLow;i<rangeHi;i++) p_next[i] = 0; //0 if unchanged
     for(intT i=0;i<blockSize;i++) frontier[i] = true;
-    
     if (tid == 0)
 	Frontier = new vertices(numOfT);
 
@@ -283,13 +305,9 @@ void *PageRankThread(void *arg) {
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
-    int sizeOfShards[CORES_PER_NODE];
-
-    partitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(double), true);
-
     int startPos = 0;
 
-    pthread_t subTids[CORES_PER_NODE];
+    pthread_t subTids[CORES_PER_NODE];    
 
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	PR_subworker_arg *arg = (PR_subworker_arg *)malloc(sizeof(PR_subworker_arg));
@@ -311,10 +329,15 @@ void *PageRankThread(void *arg) {
         pthread_create(&subTids[i], NULL, PageRankSubWorker<vertex>, (void *)arg);
     }
 
+    pthread_barrier_wait(&barr);
+
     pthread_barrier_wait(&localBarr);
-    
+
+    pthread_barrier_wait(&localBarr);
+
     pthread_barrier_wait(&barr);
     intT round = 0;
+    /*
     while(1){
 	if (maxIter > 0 && round >= maxIter)
 	    break;
@@ -325,33 +348,7 @@ void *PageRankThread(void *arg) {
 	//edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,GA.m/20,DENSE_FORWARD);
 	pthread_barrier_wait(&localBarr);
 	
-	//vertexMap(Frontier, PR_Vertex_F(p_curr, p_next, damping, n), tid);
-
-	/*
-	double tmpConst = (1-damping)*(1/(double)n);
-
-	for (intT i = rangeLow; i < rangeHi; i++) {
-		p_next[i] = damping * p_next[i] + tmpConst;
-	}
-	*/
-	//vertexMap(Frontier,PR_Vertex_F(p_curr,p_next,damping,n));
-	/*
-	//compute L1-norm between p_curr and p_next
-	{parallel_for(intT i=0;i<n;i++) {
-		p_curr[i] = fabs(p_curr[i]-p_next[i]);
-	    }}
-	double L1_norm = sequence::plusReduce(p_curr,n);
-	//cout<<"Round "<<round<<", L1 norm = "<<L1_norm<<endl;
-	if(L1_norm < epsilon) break;
-	//reset p_curr
-	*/
-
-	/*
-	for (intT i = rangeLow; i < rangeHi; i++) {
-		p_curr[i] = p_next[i];
-		p_next[i] = 0.0;
-	}
-	*/
+	//vertexMap(Frontier, PR_Vertex_F(p_curr, p_next, damping, n), tid);      
 
 	pthread_barrier_wait(&barr);
 	pthread_barrier_wait(&localBarr);
@@ -363,31 +360,12 @@ void *PageRankThread(void *arg) {
 	    p_ans = p_curr;
 	}
 
-	//Frontier.del(); 
-	//Frontier = output;
 	switchFrontier(tid, Frontier, output);
-	/*
-	if (tid == 0) {
-	    printf("round %d over\n", round);
-	}
-	*/
+
 	pthread_barrier_wait(&localBarr);	
 	pthread_barrier_wait(&barr);
-
-	/*
-	  if (tid == 0)
-	    printf("round %d: %lf\n", round, mapTime);
-	*/
     }
-    //cout<<"Finished in "<<round<<" iterations\n";
-    //Frontier.del()
-    
-    /*
-    if (tid == 0)
-	nextTime("PageRank");
     */
-    //printf("total init time: %lf\n", mapTime);
-    //pthread_exit(NULL);    
     return NULL;
 }
 

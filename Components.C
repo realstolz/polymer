@@ -81,6 +81,7 @@ void Components(graph<vertex> GA) {
     Frontier = output;
   }
   Frontier.del();
+  cout << "Finished in " << round << " iterations\n";
   free(IDs); free(prevIDs);
   nextTime("Components");
 }

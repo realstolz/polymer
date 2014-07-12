@@ -664,7 +664,8 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 
 	if (startPos < endPos) {
 	    //printf("have ele: %d to %d %d, %p\n", startPos, endPos, subworker.tid, next);
-	    nextFrontier = (intT *)malloc(sizeof(intT) * frontier->getEdgeStat());
+	    int bufferLen = frontier->getEdgeStat();
+	    nextFrontier = (intT *)malloc(sizeof(intT) * bufferLen);
 	    
 	    int currNodeNum = frontier->getNodeNumOfSparseIndex(startPos);
 	    int offset = 0;
@@ -684,24 +685,28 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 			offset += frontier->getSparseSize(currNodeNum);
 			currNodeNum++;
 			lengthOfCurr = frontier->getSparseSize(currNodeNum);
+			//printf("lengthOfCurr: %d\n", lengthOfCurr);
 		    }
 		    if (currNodeNum >= frontier->numOfNodes || lengthOfCurr <= 0) {
 			printf("oops\n");
 		    }
 		    currActiveList = frontier->getSparseArr(currNodeNum);
 		}
-		printf("s: %p %d\n", currActiveList, i-offset);
+		//printf("s: %p %d\n", currActiveList, i-offset);
 		intT idx = currActiveList[i - offset];
-		printf("vertex: %d\n", idx);
+		//printf("vertex: %d\n", idx);
 		intT d = V[idx].getFakeDegree();
 		for (intT j = 0; j < d; j++) {
 		    uintT ngh = V[idx].getOutNeighbor(j);
 		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
 			//add to active list
-			printf("out edge # %d: %d -> %d\n", nextM, idx, ngh);
+			//printf("out edge # %d: %d -> %d\n", nextM, idx, ngh);
+			if (nextM >= bufferLen) {
+			    printf("oops: %d %d\n", subworker.tid, subworker.subTid);
+			}
 			nextFrontier[nextM] = ngh;
 			nextM++;
-			nextEdgesCount += V[ngh].getFakeDegree();
+			nextEdgesCount += V[ngh].getOutDegree();
 		    }
 		}
 		lengthOfCurr--;
@@ -727,6 +732,7 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	    printf("next of %d: %d %d\n", subworker.tid, next->m, nextM);
 	    if (next->m > 0) {
 		intT *sparseArr = (intT *)malloc(sizeof(intT) * next->m);
+		printf("next sparse: %p\n", sparseArr);
 		next->s = sparseArr;
 	    }
 	    next->isDense = false;
@@ -739,7 +745,13 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	    }
 	    for (intT i = 0; i < nextM; i++) {
 		next->s[i+fillOffset] = nextFrontier[i];
+		if (i + fillOffset >= next->m) {
+		    printf("oops\n");
+		}
 		//printf("filled to %d of %d: %d\n", i + fillOffset, subworker.tid, nextFrontier[i]);
+	    }
+	    if (startPos < endPos) {
+		free(nextFrontier);
 	    }
 	}
     }

@@ -30,7 +30,7 @@
 
 using namespace std;
 
-#define CORES_PER_NODE (6)
+#define CORES_PER_NODE (2)
 
 volatile int shouldStart = 0;
 
@@ -126,7 +126,7 @@ void *BFSSubWorker(void *arg) {
 	currIter++;
 	if (tid + subTid == 0) {
 	    numVisited += Frontier->numNonzeros();
-	    //printf("num of non zeros: %d\n", Frontier->numNonzeros());
+	    printf("num of non zeros: %d\n", Frontier->numNonzeros());
 	}
 
 	if (subTid == 0) {

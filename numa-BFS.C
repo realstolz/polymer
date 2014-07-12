@@ -30,7 +30,7 @@
 
 using namespace std;
 
-#define CORES_PER_NODE (2)
+#define CORES_PER_NODE (1)
 
 volatile int shouldStart = 0;
 
@@ -81,6 +81,7 @@ struct BFS_subworker_arg {
     intT *parents_ptr;
     pthread_barrier_t *global_barr;
     pthread_barrier_t *node_barr;
+    pthread_barrier_t *node_barr2;
     LocalFrontier *localFrontier;
 };
 
@@ -112,6 +113,7 @@ void *BFSSubWorker(void *arg) {
     subworker.dense_start = start;
     subworker.dense_end = end;
     subworker.global_barr = global_barr;
+    subworker.local_barr = my_arg->node_barr2;
 
     pthread_barrier_wait(local_barr);
 
@@ -126,7 +128,7 @@ void *BFSSubWorker(void *arg) {
 	currIter++;
 	if (tid + subTid == 0) {
 	    numVisited += Frontier->numNonzeros();
-	    printf("num of non zeros: %d\n", Frontier->numNonzeros());
+	    //printf("num of non zeros: %d\n", Frontier->numNonzeros());
 	}
 
 	if (subTid == 0) {
@@ -160,8 +162,6 @@ void *BFSSubWorker(void *arg) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
 	pthread_barrier_wait(global_barr);
-	if (subworker.isMaster())
-	    printf("nextNum: %d\n", Frontier->numNonzeros());
     }
 
     if (tid + subTid == 0) {
@@ -238,6 +238,9 @@ void *BFSWorker(void *arg) {
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
+    pthread_barrier_t localBarr2;
+    pthread_barrier_init(&localBarr2, NULL, CORES_PER_NODE);
+
     pthread_t subTids[CORES_PER_NODE];
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	BFS_subworker_arg *arg = (BFS_subworker_arg *)malloc(sizeof(BFS_subworker_arg));
@@ -249,6 +252,7 @@ void *BFSWorker(void *arg) {
 	arg->parents_ptr = parents;
 
 	arg->node_barr = &localBarr;
+	arg->node_barr2 = &localBarr2;
 	arg->global_barr = &global_barr;
 	arg->localFrontier = output;
 	
@@ -293,7 +297,7 @@ struct PR_Hash_F {
 
 template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
-    numOfNode = 1;//numa_num_configured_nodes();
+    numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);

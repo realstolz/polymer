@@ -189,6 +189,7 @@ void *PageRankSubWorker(void *arg) {
             break;
         currIter++;
 	if (subTid == 0) {
+	    Frontier->calculateNumOfNonZero(tid);
 	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 

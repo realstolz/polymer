@@ -556,6 +556,30 @@ struct vertices {
     }
 };
 
+struct Default_worker_arg {
+    void *GA;
+    int maxIter;
+    int tid;
+    int numOfNode;
+    int rangeLow;
+    int rangeHi;
+};
+
+struct Default_subworker_arg {
+    void *GA;
+    int maxIter;
+    int tid;
+    int subTid;
+    int startPos;
+    int endPos;
+    int rangeLow;
+    int rangeHi;
+    pthread_barrier_t *global_barr;
+    pthread_barrier_t *node_barr;
+    pthread_barrier_t *master_barr;
+    LocalFrontier *localFrontier;
+};
+
 struct nonNegF{bool operator() (intT a) {return (a>=0);}};
 
 //options to edgeMap for different versions of dense edgeMap (default is DENSE)

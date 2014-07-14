@@ -456,7 +456,7 @@ struct vertices {
 	//printf("non zero count of %d: %d\n", nodeNum, frontiers[nodeNum]->m);
     }
     
-    int numNonzeros() {
+    int numNonzeros() {       
 	if (m < 0) {
 	    intT sum = 0;
 	    for (int i = 0; i < numOfNodes; i++) {

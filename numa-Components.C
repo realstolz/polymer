@@ -148,6 +148,7 @@ void *ComponentsSubWorker(void *args) {
 	}
 	pthread_barrier_wait(global_barr);
 	swap(IDs, PrevIDs);
+	break;
     }
     pthread_barrier_wait(master_barr);
     return NULL;
@@ -236,6 +237,15 @@ void *ComponentsWorker(void *args) {
     pthread_barrier_wait(&masterBarr);
     //computation of subworkers
     pthread_barrier_wait(&masterBarr);
+
+    Default_Hash_F hasher(GA.n, numOfNode);
+    if (tid == 0) {
+	for (intT i = 0; i < GA.n; i++) {
+	    if (Frontier->getBit(hasher.hashFunc(i))) {
+		printf("alive: %d\n", i);
+	    }
+	}
+    }
     
     pthread_barrier_wait(&barr);
     return NULL;

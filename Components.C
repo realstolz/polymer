@@ -76,9 +76,16 @@ void Components(graph<vertex> GA) {
   while(!Frontier.isEmpty()){ //iterate until IDS converge
     round++;
     vertexMap(Frontier,CC_Vertex_F(IDs,prevIDs));
-    vertices output = edgeMap(GA, Frontier, CC_F(IDs,prevIDs),GA.m/20);
+    vertices output = edgeMap(GA, Frontier, CC_F(IDs,prevIDs),GA.m/20, DENSE_FORWARD);
     Frontier.del();
     Frontier = output;
+    break;
+  }
+  Frontier.toDense();
+  for (intT i = 0; i < GA.n; i++) {
+      if (Frontier.d[i]) {
+	  printf("alive: %d\n", i);
+      }
   }
   Frontier.del();
   cout << "Finished in " << round << " iterations\n";

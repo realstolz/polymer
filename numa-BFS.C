@@ -93,6 +93,7 @@ void *BFSSubWorker(void *arg) {
     int tid = my_arg->tid;
     int subTid = my_arg->subTid;
     pthread_barrier_t *local_barr = my_arg->node_barr;
+    pthread_barrier_t *local_barr2 = my_arg->node_barr2;
     pthread_barrier_t *global_barr = my_arg->global_barr;
     LocalFrontier *output = my_arg->localFrontier;
 
@@ -128,26 +129,18 @@ void *BFSSubWorker(void *arg) {
 	currIter++;
 	if (tid + subTid == 0) {
 	    numVisited += Frontier->numNonzeros();
-	    //printf("num of non zeros: %d\n", Frontier->numNonzeros());
+	    printf("num of non zeros: %d\n", Frontier->numNonzeros());
 	}
 
 	if (subTid == 0) {
-	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
-	pthread_barrier_wait(global_barr);
+	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	gettimeofday(&startT, &tz);
 	edgeMap(GA, Frontier, BFS_F(parents), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
 	gettimeofday(&endT, &tz);
-
-	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
-	double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
-
-	double mapTime = timeEnd - timeStart;
-	if (tid + subTid == 0) {
-	    printf("edge map time: %lf\n", mapTime);
-	}
-	
+	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	if (subTid == 0) {
 	    pthread_barrier_wait(global_barr);
 	    switchFrontier(tid, Frontier, output); //set new frontier
@@ -156,12 +149,17 @@ void *BFSSubWorker(void *arg) {
 	    pthread_barrier_wait(global_barr);
 	}
 
-	pthread_barrier_wait(global_barr);
-
 	if (subworker.isSubMaster()) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
 	pthread_barrier_wait(global_barr);
+	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+	double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+
+	double mapTime = timeEnd - timeStart;
+	if (tid + subTid == 0) {
+	    printf("edge map time: %lf\n", mapTime);
+	}
     }
 
     if (tid + subTid == 0) {

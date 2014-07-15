@@ -40,7 +40,7 @@ struct CC_F {
   }
   inline bool updateAtomic (intT s, intT d) { //atomic Update
       intT origID = IDs[d];
-      bool res = (writeMin(&IDs[d], IDs[s]) && origID == prevIDs[d]);
+      bool res = (writeMin(&IDs[d], prevIDs[s]) && origID == prevIDs[d]);
       if (d == 3) {
 	  //printf("Update from %d, %d (%d, %d)\n", s, res, IDs[d], IDs[s]);
       }
@@ -84,7 +84,7 @@ void Components(graph<vertex> GA) {
   while(!Frontier.isEmpty()){ //iterate until IDS converge
     round++;
     vertexMap(Frontier,CC_Vertex_F(IDs,prevIDs));
-    vertices output = edgeMap(GA, Frontier, CC_F(IDs,prevIDs), 0, DENSE_FORWARD);
+    vertices output = edgeMap(GA, Frontier, CC_F(IDs,prevIDs), GA.m, DENSE_FORWARD);
     Frontier.del();
     Frontier = output;
     //break;

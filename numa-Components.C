@@ -62,9 +62,6 @@ struct CC_F {
   inline bool updateAtomic (intT s, intT d) { //atomic Update
       intT origID = IDs[d];
       bool res = (writeMin(&IDs[d], prevIDs[s]) && origID == prevIDs[d]);
-      if (d == 3) {
-	  //printf("Update from %d, %d (%d, %d)\n", s, res, IDs[d], IDs[s]);
-      }
       return res;
     /*
     if (origID != prevIDs[d])
@@ -141,7 +138,7 @@ void *ComponentsSubWorker(void *args) {
 
 	vertexMap(Frontier, CC_Vertex_F(IDs,PrevIDs), tid, subTid, CORES_PER_NODE);
 	pthread_barrier_wait(global_barr);
-	edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, 0, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, GA.n, DENSE_FORWARD, false, true, subworker);
 	pthread_barrier_wait(global_barr);
 
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);

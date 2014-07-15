@@ -990,7 +990,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    
-    intT m = V->numNonzeros();
+    intT m = V->numNonzeros();// + V->getEdgeStat();
     
     /*
     if (subworker.isMaster())
@@ -1045,7 +1045,7 @@ void vertexCounter(graph<vertex> GA, LocalFrontier *frontier, int nodeNum, int s
 
     for (int i = startPos; i < endPos; i++) {
 	if (b[i]) {
-	    outEdges += GA.V[i+offset].getFakeDegree();
+	    outEdges += GA.V[i+offset].getOutDegree();
 	    m++;
 	}
     }

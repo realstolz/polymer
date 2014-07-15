@@ -79,7 +79,7 @@ int* BellmanFord(intT start, wghGraph<vertex> GA) {
       {parallel_for(intT i=0;i<n;i++) ShortestPathLen[i] = -(INT_MAX/2);}
       break;
     }
-    //cout<<"Round "<<round<<" "<<Frontier.numNonzeros()<<endl;
+    cout<<"Round "<<round<<" "<<Frontier.numNonzeros()<<endl;
 
     vertices output = edgeMap(GA, Frontier, BF_F(ShortestPathLen,Visited), GA.m/20,DENSE_FORWARD);
     vertexMap(output,BF_Vertex_F(Visited));

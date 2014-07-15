@@ -60,9 +60,20 @@ struct CC_F {
     return 0;
   }
   inline bool updateAtomic (intT s, intT d) { //atomic Update
-    intT origID = IDs[d];
+      intT origID = IDs[d];
+      bool res = (writeMin(&IDs[d], prevIDs[s]) && origID == prevIDs[d]);
+      if (d == 3) {
+	  //printf("Update from %d, %d (%d, %d)\n", s, res, IDs[d], IDs[s]);
+      }
+      return res;
+    /*
+    if (origID != prevIDs[d])
+	printf("diff ID: %d, %d, %d\n", d, origID, prevIDs[d]);
+    */
+    /*
     return (writeMin(&IDs[d],IDs[s]) 
-	    && origID == prevIDs[d]);
+    	    && origID == prevIDs[d]);
+    */
   }
   inline bool cond (intT d) { return 1; } //does nothing
 };
@@ -122,16 +133,16 @@ void *ComponentsSubWorker(void *args) {
     while (!Frontier->isEmpty() || currIter == 0) {
 	currIter++;
 	if (subworker.isMaster()) {
-	    numVisited = Frontier->numNonzeros();
-	    printf("non zeros: %d\n", numVisited);
+	    numVisited += Frontier->numNonzeros();
+	    printf("non zeros: %d\n", Frontier->numNonzeros());
 	}
-	if (subTid == 0) {
-	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
-	}
+	
+	clearLocalFrontier(output, tid, subTid, CORES_PER_NODE);
+
 	vertexMap(Frontier, CC_Vertex_F(IDs,PrevIDs), tid, subTid, CORES_PER_NODE);
 	pthread_barrier_wait(global_barr);
 	edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, 0, DENSE_FORWARD, false, true, subworker);
-	pthread_barrier_wait(local_barr);
+	pthread_barrier_wait(global_barr);
 
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 
@@ -146,9 +157,14 @@ void *ComponentsSubWorker(void *args) {
 	if (subworker.isSubMaster()) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
+
 	pthread_barrier_wait(global_barr);
-	swap(IDs, PrevIDs);
-	break;
+	//swap(IDs, PrevIDs);
+	//break;
+    }
+
+    if (subworker.isMaster()) {
+	cout << "Finished in " << currIter << " iterations.\n";
     }
     pthread_barrier_wait(master_barr);
     return NULL;
@@ -238,15 +254,6 @@ void *ComponentsWorker(void *args) {
     //computation of subworkers
     pthread_barrier_wait(&masterBarr);
 
-    Default_Hash_F hasher(GA.n, numOfNode);
-    if (tid == 0) {
-	for (intT i = 0; i < GA.n; i++) {
-	    if (Frontier->getBit(hasher.hashFunc(i))) {
-		printf("alive: %d\n", i);
-	    }
-	}
-    }
-    
     pthread_barrier_wait(&barr);
     return NULL;
 }
@@ -290,7 +297,7 @@ void Components(graph<vertex> &GA) {
     for (int i = 0; i < numOfNode; i++) {
 	pthread_join(tids[i], NULL);
     }
-    nextTime("BFS");
+    nextTime("Components");
 }
 
 int parallel_main(int argc, char* argv[]) {  

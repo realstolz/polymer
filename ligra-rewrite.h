@@ -1082,6 +1082,22 @@ void vertexMap(vertices *V, F add, int nodeNum, int subNum, int totalSub) {
     }
 }
 
+void clearLocalFrontier(LocalFrontier *next, int nodeNum, int subNum, int totalSub) {
+    int size = next->endID - next->startID;
+    //int offset = V->getOffset(nodeNum);
+    bool *b = next->b;
+    int subSize = size / totalSub;
+    int startPos = subSize * subNum;
+    int endPos = subSize * (subNum + 1);
+    if (subNum == totalSub - 1) {
+	endPos = size;
+    }
+
+    for (int i = startPos; i < endPos; i++) {
+	b[i] = false;
+    }
+}
+
 template <class F>
 void vertexFilter(vertices *V, F filter, int nodeNum, bool *result) {
     int size = V->getSize(nodeNum);

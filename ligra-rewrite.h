@@ -828,16 +828,16 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	}
 	struct timeval start1, end1, start2, end2, start3, end3, startT, endT;
 	struct timezone tz = {0, 0};
-	gettimeofday(&startT, &tz);
+	//gettimeofday(&startT, &tz);
 	writeAdd(&(next->m), nextM);
 	writeAdd(&(next->outEdgesCount), nextEdgesCount);
 	if (subworker.isSubMaster()) {
 	    intT *offsets = (intT *)malloc(sizeof(intT) * subworker.numOfSub);
 	    next->tmp = offsets;
 	}
-	gettimeofday(&start1, &tz);
+	//gettimeofday(&start1, &tz);
 	pthread_barrier_wait(subworker.local_barr);
-	gettimeofday(&end1, &tz);
+	//gettimeofday(&end1, &tz);
 	next->tmp[subworker.subTid] = nextM;
 	if (subworker.isSubMaster()) {
 	    //printf("next of %d: %d %d\n", subworker.tid, next->m, nextM);
@@ -848,9 +848,9 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	    }
 	    next->isDense = false;
 	}
-	gettimeofday(&start2, &tz);
+	//gettimeofday(&start2, &tz);
 	pthread_barrier_wait(subworker.local_barr);
-	gettimeofday(&end2, &tz);
+	//gettimeofday(&end2, &tz);
 	if (nextM > 0) {
 	    intT fillOffset = 0;
 	    for (int i = 0; i < subworker.subTid; i++) {
@@ -867,10 +867,11 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 		free(nextFrontier);
 	    }
 	}
-	gettimeofday(&start3, &tz);
+	//gettimeofday(&start3, &tz);
 	pthread_barrier_wait(subworker.local_barr);
-	gettimeofday(&end3, &tz);
-	gettimeofday(&endT, &tz);
+	//gettimeofday(&end3, &tz);
+	//gettimeofday(&endT, &tz);
+	/*
 	if (subworker.isMaster()) {
 	    double timeStart = ((double)start1.tv_sec) + ((double)start1.tv_usec) / 1000000.0;
 	    double timeEnd = ((double)end1.tv_sec) + ((double)end1.tv_usec) / 1000000.0;	    
@@ -892,6 +893,7 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	    mapTime = timeEnd - timeStart;	   
 	    printf("Total:after map time: %lf\n", mapTime);
 	}
+	*/
     }
 }
 

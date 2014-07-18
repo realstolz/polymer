@@ -685,11 +685,12 @@ void edgeMapSparseV3(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	*mPtr = 0;
 	next->outEdgesCount = 0;
 	int bufferLen = frontier->getEdgeStat();
-	next->s = (intT *)malloc(sizeof(intT) * bufferLen);
-	intT *nextFrontier = next->s;
+	if (subworker.isSubMaster())
+	    next->s = (intT *)malloc(sizeof(intT) * bufferLen);
 	intT nextEdgesCount = 0;
 	
 	pthread_barrier_wait(subworker.local_barr);
+	intT *nextFrontier = next->s;
 
 	if (startPos < endPos) {
 	    //printf("have ele: %d to %d %d, %p\n", startPos, endPos, subworker.tid, next);	    
@@ -728,7 +729,8 @@ void edgeMapSparseV3(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 			if (nextM >= bufferLen) {
 			    printf("oops: %d %d\n", subworker.tid, subworker.subTid);
 			}
-			*/		       
+			*/
+			//printf("I am here\n");
 			int tmp = __sync_fetch_and_add(mPtr, 1);
 			if (tmp >= bufferLen)
 			    printf("oops\n");

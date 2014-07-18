@@ -30,7 +30,7 @@
 
 using namespace std;
 
-#define CORES_PER_NODE (1)
+#define CORES_PER_NODE (6)
 
 volatile int shouldStart = 0;
 

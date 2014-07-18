@@ -676,20 +676,23 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
 template <class F, class vertex>
 void edgeMapSparseV3(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker = NULL) {
     vertex *V = GA.V;
-    if (part && subworker.isSubMaster()) {
+    if (part) {
 	intT currM = frontier->numNonzeros();
-	int startPos = 0;//subworker.getStartPos(currM);
-	int endPos = currM;//subworker.getEndPos(currM);
+	int startPos = subworker.getStartPos(currM);
+	int endPos = subworker.getEndPos(currM);
 
-	intT nextM = 0;
+	intT *mPtr = &(next->m);
+	*mPtr = 0;
+	next->outEdgesCount = 0;
+	int bufferLen = frontier->getEdgeStat();
+	next->s = (intT *)malloc(sizeof(intT) * bufferLen);
+	intT *nextFrontier = next->s;
 	intT nextEdgesCount = 0;
-	intT *nextFrontier = NULL;
+	
+	pthread_barrier_wait(subworker.local_barr);
 
 	if (startPos < endPos) {
-	    //printf("have ele: %d to %d %d, %p\n", startPos, endPos, subworker.tid, next);
-	    int bufferLen = frontier->getEdgeStat();
-	    nextFrontier = (intT *)malloc(sizeof(intT) * bufferLen);
-	    
+	    //printf("have ele: %d to %d %d, %p\n", startPos, endPos, subworker.tid, next);	    
 	    int currNodeNum = frontier->getNodeNumOfSparseIndex(startPos);
 	    int offset = 0;
 	    for (int i = 0; i < currNodeNum; i++) {
@@ -721,44 +724,24 @@ void edgeMapSparseV3(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
 			//add to active list
 			//printf("out edge # %d: %d -> %d of %d %d\n", nextM, idx, ngh, subworker.tid, subworker.subTid);
+			/*
 			if (nextM >= bufferLen) {
 			    printf("oops: %d %d\n", subworker.tid, subworker.subTid);
 			}
-			nextFrontier[nextM] = ngh;
-			nextM++;
+			*/		       
+			int tmp = __sync_fetch_and_add(mPtr, 1);
+			if (tmp >= bufferLen)
+			    printf("oops\n");
+			nextFrontier[tmp] = ngh;
 			nextEdgesCount += V[ngh].getOutDegree();
 		    }
 		}
 		lengthOfCurr--;
 		//printf("nextM: %d %d\n", nextM, nextEdgesCount);
 	    }
-	} else {
-	    nextM = 0;
-	    nextEdgesCount = 0;
 	}
-
-	next->m += nextM;
-	next->outEdgesCount += nextEdgesCount;
-	//printf("next of %d: %d %d\n", subworker.tid, next->m, nextM);
-	if (next->m > 0) {
-	    intT *sparseArr = (intT *)malloc(sizeof(intT) * next->m);
-	    //printf("next sparse: %p\n", sparseArr);
-	    next->s = sparseArr;
-	}
-	next->isDense = false;
-	if (nextM > 0) {
-	    intT fillOffset = 0;
-	    for (intT i = 0; i < nextM; i++) {
-		next->s[i+fillOffset] = nextFrontier[i];
-		if (i + fillOffset >= next->m) {
-		    printf("oops\n");
-		}
-		//printf("filled to %d of %d: %d\n", i + fillOffset, subworker.tid, nextFrontier[i]);
-	    }
-	    if (startPos < endPos) {
-		free(nextFrontier);
-	    }
-	}
+	__sync_fetch_and_add(&(next->outEdgesCount), nextEdgesCount);
+	pthread_barrier_wait(subworker.local_barr);
     }
 }
 
@@ -1021,7 +1004,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 
 	pthread_barrier_wait(subworker.global_barr);
 	
-	edgeMapSparseV2(GA, V, f, next, part, subworker);
+	edgeMapSparseV3(GA, V, f, next, part, subworker);
 	next->isDense = false;
     }
 }

@@ -133,13 +133,12 @@ void *BFSSubWorker(void *arg) {
 	}
 
 	if (subTid == 0) {
-	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	gettimeofday(&startT, &tz);
 	edgeMap(GA, Frontier, BFS_F(parents), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
-	gettimeofday(&endT, &tz);
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	if (subTid == 0) {
 	    pthread_barrier_wait(global_barr);
@@ -153,6 +152,7 @@ void *BFSSubWorker(void *arg) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
 	pthread_barrier_wait(global_barr);
+	gettimeofday(&endT, &tz);
 	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
 	double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
 

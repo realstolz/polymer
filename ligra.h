@@ -279,8 +279,8 @@ vertices edgeMap(graph<vertex> GA, vertices V, F f, intT threshold = -1,
   uintT outDegrees = sequence::plusReduce(degrees, m);
   edgesTraversed += outDegrees;
   if (outDegrees == 0) return vertices(numVertices);
-  printf("switch? : %d\n", m);
   if (m + outDegrees > threshold) { 
+    printf("Dense : %d\n", m);
     V.toDense();
     free(degrees);
     free(frontierVertices);
@@ -291,6 +291,7 @@ vertices edgeMap(graph<vertex> GA, vertices V, F f, intT threshold = -1,
     //cout << "size (D) = " << v1.m << endl;
     return  v1;
   } else { 
+    printf("Sparse : %d\n", m);
     pair<uintT,intT*> R = 
       remDups ? 
       edgeMapSparse(frontierVertices, V.s, degrees, V.numNonzeros(), f, 

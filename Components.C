@@ -25,6 +25,8 @@
 #include "gettime.h"
 using namespace std;
 
+bool needResult = false;
+
 struct CC_F {
   intT* IDs;
   intT* prevIDs;
@@ -39,11 +41,8 @@ struct CC_F {
     return 0;
   }
   inline bool updateAtomic (intT s, intT d) { //atomic Update
-      intT origID = IDs[d];
-      bool res = (writeMin(&IDs[d], prevIDs[s]) && origID == prevIDs[d]);
-      if (d == 3) {
-	  //printf("Update from %d, %d (%d, %d)\n", s, res, IDs[d], IDs[s]);
-      }
+      intT origID = IDs[d];   
+      bool res = (writeMin(&IDs[d], IDs[s]) && origID == prevIDs[d]);
       return res;
 
     /*
@@ -84,7 +83,7 @@ void Components(graph<vertex> GA) {
   while(!Frontier.isEmpty()){ //iterate until IDS converge
     round++;
     vertexMap(Frontier,CC_Vertex_F(IDs,prevIDs));
-    vertices output = edgeMap(GA, Frontier, CC_F(IDs,prevIDs), GA.m, DENSE_FORWARD);
+    vertices output = edgeMap(GA, Frontier, CC_F(IDs,prevIDs), GA.m / 20, DENSE_FORWARD);
     Frontier.del();
     Frontier = output;
     //break;
@@ -95,6 +94,7 @@ void Components(graph<vertex> GA) {
 	    }
 	}
     }
+    //printf("print: %d\n", IDs[0]);
   }
   Frontier.toDense();
   if (false) {
@@ -106,17 +106,25 @@ void Components(graph<vertex> GA) {
   }
   Frontier.del();
   cout << "Finished in " << round << " iterations\n";
-  free(IDs); free(prevIDs);
   nextTime("Components");
+
+  if (needResult) {
+      for (intT i = 0; i < GA.n; i++) {
+	  printf("Result of %d : %d\n", i, IDs[i]);
+      }
+  }
+  free(IDs); free(prevIDs);
 }
 
 int parallel_main(int argc, char* argv[]) {  
   char* iFile;
   bool binary = false;
   bool symmetric = false;
+  needResult = false;
   if(argc > 1) iFile = argv[1];
   if(argc > 2) if((string) argv[2] == (string) "-s") symmetric = true;
-  if(argc > 3) if((string) argv[3] == (string) "-b") binary = true;
+  if(argc > 3) if((string) argv[3] == (string) "-result") needResult = true;
+  if(argc > 4) if((string) argv[4] == (string) "-b") binary = true;
 
   if(symmetric) {
     graph<symmetricVertex> G = 

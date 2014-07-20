@@ -316,10 +316,11 @@ struct LocalFrontier {
 	    _seq<intT> R = sequence::packIndex(b, n);
 	    s = R.A;
 	    m = R.n;
+	    {parallel_for (intT i = 0; i < m; i++) s[i] = s[i] + startID;}
 	    if (m == 0) {
 		printf("%p\n", s);
 	    } else {
-		printf("M is %d\n", m);
+		printf("M is %d and first ele is %d\n", m, s[0]);
 	    }
 	}
 	isDense = false;
@@ -1053,19 +1054,33 @@ void vertexMap(vertices *V, F add, int nodeNum) {
 
 template <class F>
 void vertexMap(vertices *V, F add, int nodeNum, int subNum, int totalSub) {
-    int size = V->getSize(nodeNum);
-    int offset = V->getOffset(nodeNum);
-    bool *b = V->getArr(nodeNum);
-    int subSize = size / totalSub;
-    int startPos = subSize * subNum;
-    int endPos = subSize * (subNum + 1);
-    if (subNum == totalSub - 1) {
-	endPos = size;
-    }
-
-    for (int i = startPos; i < endPos; i++) {
-	if (b[i])
-	    add(i + offset);
+    if (V->isDense) {
+	int size = V->getSize(nodeNum);
+	int offset = V->getOffset(nodeNum);
+	bool *b = V->getArr(nodeNum);
+	int subSize = size / totalSub;
+	int startPos = subSize * subNum;
+	int endPos = subSize * (subNum + 1);
+	if (subNum == totalSub - 1) {
+	    endPos = size;
+	}
+	
+	for (int i = startPos; i < endPos; i++) {
+	    if (b[i])
+		add(i + offset);
+	}
+    } else {
+	int size = V->frontiers[nodeNum]->m;
+	intT *s = V->frontiers[nodeNum]->s;
+	int subSize = size / totalSub;
+	int startPos = subSize * subNum;
+	int endPos = subSize * (subNum + 1);
+	if (subNum == totalSub - 1) {
+	    endPos = size;
+	}
+	for (int i = startPos; i < endPos; i++) {
+	    add(s[i]);
+	}
     }
 }
 

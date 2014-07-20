@@ -61,7 +61,8 @@ struct CC_F {
   }
   inline bool updateAtomic (intT s, intT d) { //atomic Update
       intT origID = IDs[d];
-      bool res = (writeMin(&IDs[d], prevIDs[s]) && origID == prevIDs[d]);
+      bool res = (writeMin(&IDs[d], IDs[s]) && origID == prevIDs[d]);
+      //printf("update of edge (%d)%d -> %d(%d / %d to %d), %s\n", IDs[s], s, d, origID, prevIDs[d], IDs[d], res ? "YES" : "NO");
       return res;
     /*
     if (origID != prevIDs[d])
@@ -83,6 +84,7 @@ struct CC_Vertex_F {
     IDs(_IDs), prevIDs(_prevIDs) {}
   inline bool operator () (intT i) {
     prevIDs[i] = IDs[i];
+    //printf("update: %d: %d to %d\n", i, prevIDs[i], IDs[i]);
     return 1;
   }
 };
@@ -126,6 +128,8 @@ void *ComponentsSubWorker(void *args) {
     }
 
     pthread_barrier_wait(global_barr);
+    
+    intT switchThreshold = GA.n / 10;
 
     while (!Frontier->isEmpty() || currIter == 0) {
 	currIter++;
@@ -138,7 +142,7 @@ void *ComponentsSubWorker(void *args) {
 
 	vertexMap(Frontier, CC_Vertex_F(IDs,PrevIDs), tid, subTid, CORES_PER_NODE);
 	pthread_barrier_wait(global_barr);
-	edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, GA.n, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_FORWARD, false, true, subworker);
 	pthread_barrier_wait(global_barr);
 
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
@@ -190,11 +194,15 @@ void *ComponentsWorker(void *args) {
     int blockSize = rangeHi - rangeLow;
     
     bool *frontier = (bool *)numa_alloc_local(sizeof(bool) * blockSize);
-
-    for(intT i=0;i<blockSize;i++) frontier[i] = true;
+    intT outEdgesCount = 0;
+    for(intT i=0;i<blockSize;i++) {
+	frontier[i] = true;
+	outEdgesCount += GA.V[i + rangeLow].getOutDegree();
+    }
 
     LocalFrontier *current = new LocalFrontier(frontier, rangeLow, rangeHi);
     current->m = blockSize;
+    current->outEdgesCount = outEdgesCount;
 
     if (tid == 0)
 	Frontier = new vertices(numOfT);
@@ -213,7 +221,7 @@ void *ComponentsWorker(void *args) {
     LocalFrontier *output = new LocalFrontier(next, rangeLow, rangeHi);
     
     int sizeOfShards[CORES_PER_NODE];
-    partitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(intT), true);
+    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(intT), true, true);
 
     pthread_barrier_t masterBarr;
     pthread_barrier_init(&masterBarr, NULL, CORES_PER_NODE+1);
@@ -243,8 +251,9 @@ void *ComponentsWorker(void *args) {
     }
 
     intT *IDs = IDs_global;
+    Default_Hash_F hasher(GA.n, numOfNode);
     for (intT i = rangeLow; i < rangeHi; i++) {
-	IDs[i] = i;
+	IDs[hasher.hashFunc(i)] = i;
     }
 
     pthread_barrier_wait(&masterBarr);
@@ -252,6 +261,7 @@ void *ComponentsWorker(void *args) {
     pthread_barrier_wait(&masterBarr);
 
     pthread_barrier_wait(&barr);
+
     return NULL;
 }
 
@@ -295,15 +305,24 @@ void Components(graph<vertex> &GA) {
 	pthread_join(tids[i], NULL);
     }
     nextTime("Components");
+
+
+    if (needResult) {
+	for (intT i = 0; i < GA.n; i++) {
+	    printf("Result of %d : %d\n", i, IDs_global[hasher.hashFunc(i)]);
+	}
+    }
 }
 
 int parallel_main(int argc, char* argv[]) {  
   char* iFile;
   bool binary = false;
   bool symmetric = false;
+  needResult = false;
   if(argc > 1) iFile = argv[1];
   if(argc > 2) if((string) argv[2] == (string) "-s") symmetric = true;
-  if(argc > 3) if((string) argv[3] == (string) "-b") binary = true;
+  if(argc > 3) if((string) argv[3] == (string) "-result") needResult = true;
+  if(argc > 4) if((string) argv[4] == (string) "-b") binary = true;
 
   if(symmetric) {
     graph<symmetricVertex> G = 

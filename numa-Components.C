@@ -47,33 +47,38 @@ bool needResult = false;
 vertices *Frontier;
 
 struct CC_F {
-  intT* IDs;
-  intT* prevIDs;
-  CC_F(intT* _IDs, intT* _prevIDs) : 
-    IDs(_IDs), prevIDs(_prevIDs) {}
-  inline bool update(intT s, intT d){ //Update function writes min ID
-    intT origID = IDs[d];
-    if(IDs[s] < origID) {
-      IDs[d] = min(origID,IDs[s]);
-      if(origID == prevIDs[d]) return 1;
+    intT* IDs;
+    intT* prevIDs;
+    CC_F(intT* _IDs, intT* _prevIDs) : 
+	IDs(_IDs), prevIDs(_prevIDs) {}
+    inline bool update(intT s, intT d){ //Update function writes min ID
+	intT origID = IDs[d];
+	if(IDs[s] < origID) {
+	    IDs[d] = min(origID,IDs[s]);
+	    if(origID == prevIDs[d]) return 1;
+	}
+	return 0;
     }
-    return 0;
-  }
-  inline bool updateAtomic (intT s, intT d) { //atomic Update
-      intT origID = IDs[d];
-      bool res = (writeMin(&IDs[d], IDs[s]) && origID == prevIDs[d]);
-      //printf("update of edge (%d)%d -> %d(%d / %d to %d), %s\n", IDs[s], s, d, origID, prevIDs[d], IDs[d], res ? "YES" : "NO");
-      return res;
-    /*
-    if (origID != prevIDs[d])
-	printf("diff ID: %d, %d, %d\n", d, origID, prevIDs[d]);
-    */
-    /*
-    return (writeMin(&IDs[d],IDs[s]) 
-    	    && origID == prevIDs[d]);
-    */
-  }
-  inline bool cond (intT d) { return 1; } //does nothing
+    inline bool updateAtomic (intT s, intT d) { //atomic Update
+	intT origID = IDs[d];
+	bool res = (writeMin(&IDs[d], IDs[s]) && origID == prevIDs[d]);
+	//printf("update of edge (%d)%d -> %d(%d / %d to %d), %s\n", IDs[s], s, d, origID, prevIDs[d], IDs[d], res ? "YES" : "NO");
+	return res;
+	/*
+	  if (origID != prevIDs[d])
+	  printf("diff ID: %d, %d, %d\n", d, origID, prevIDs[d]);
+	*/
+	/*
+	  return (writeMin(&IDs[d],IDs[s]) 
+	  && origID == prevIDs[d]);
+	*/
+    }
+    
+    inline void vertUpdate(intT v) {
+	prevIDs[v] = IDs[v];
+    }
+
+    inline bool cond (intT d) { return 1; } //does nothing
 };
 
 //function used by vertex map to sync prevIDs with IDs

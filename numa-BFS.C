@@ -30,7 +30,7 @@
 
 using namespace std;
 
-#define CORES_PER_NODE (6)
+int CORES_PER_NODE = 6;
 
 volatile int shouldStart = 0;
 
@@ -56,6 +56,10 @@ struct BFS_F {
     }
     inline bool updateAtomic (intT s, intT d){ //atomic version of Update
 	return (CAS(&Parents[d],(intT)-1,s));
+    }
+    
+    inline void vertUpdate(intT v) {
+	return;
     }
     //cond function checks if vertex has been visited yet
     inline bool cond (intT d) { return (Parents[d] == -1); } 
@@ -138,8 +142,9 @@ void *BFSSubWorker(void *arg) {
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	gettimeofday(&startT, &tz);
-	edgeMap(GA, Frontier, BFS_F(parents), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
-	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
+	//edgeMap(GA, Frontier, BFS_F(parents), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
+	//vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
+	edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);
 	if (subTid == 0) {
 	    pthread_barrier_wait(global_barr);
 	    switchFrontier(tid, Frontier, output); //set new frontier
@@ -160,6 +165,7 @@ void *BFSSubWorker(void *arg) {
 	if (tid + subTid == 0) {
 	    printf("edge map time: %lf\n", mapTime);
 	}
+	break;
     }
 
     if (tid + subTid == 0) {
@@ -233,6 +239,12 @@ void *BFSWorker(void *arg) {
 
     int startPos = 0;
 
+    current->s = (intT *)numa_alloc_local(sizeof(intT) * GA.n);
+    current->s[0] = my_arg->start;
+    current->m = 1;
+    current->head = 0;
+    current->tail = 1;
+
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
@@ -296,6 +308,8 @@ struct PR_Hash_F {
 template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
     numOfNode = numa_num_configured_nodes();
+    int numOfCpu = numa_num_configured_cpus();
+    CORES_PER_NODE = 1;//numOfCpu / numOfNode;
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);

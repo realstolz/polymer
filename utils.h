@@ -226,6 +226,11 @@ namespace sequence {
     return pack((intT *) NULL, Fl, (intT) 0, n, identityF<intT>());
   }
 
+  template <class intT>
+  _seq<intT> packIndexToBuffer(bool* Fl, intT n, intT buffSize) {
+      return pack((intT *)newA(intT, buffSize), Fl, (intT) 0, n, identityF<intT>());
+  }
+
   template <class ET, class intT, class PRED> 
   intT filter(ET* In, ET* Out, intT n, PRED p) {
     bool *Fl = newA(bool,n);

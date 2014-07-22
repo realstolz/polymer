@@ -43,6 +43,8 @@ using namespace std;
 
 #define PAGESIZE (4096)
 
+#define MIN(x, y) ((x > y) ? (y) : (x))
+
 //*****START FRAMEWORK*****
 
 /* This is no longer ligra, 
@@ -295,6 +297,9 @@ void *mapDataArray(int numOfShards, int *sizeArr, int sizeOfOneEle) {
 struct LocalFrontier {
     intT n;
     intT m;
+    intT head;
+    intT tail;
+    intT emptySignal;
     intT outEdgesCount;
     int startID;
     int endID;
@@ -672,6 +677,102 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     //writeAdd(&(next->outEdgesCount), outEdgesCount);
     //printf("edgeMap: %d %d\n", m, outEdgesCount);
     return NULL;
+}
+
+template <class F, class vertex>
+void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = NULL) {
+    const int BLOCK_SIZE = 64;
+    
+    vertex *V = GA.V;   
+    intT *queues[frontier->numOfNodes];
+    intT *tails[frontier->numOfNodes];
+    intT *localTails[frontier->numOfNodes];
+    intT *signals[frontier->numOfNodes];
+    if (subworker.isSubMaster()) {
+	frontier->frontiers[subworker.tid]->emptySignal = 0;
+    }
+
+    for (int i = 0; i < frontier->numOfNodes; i++) {
+	queues[i] = frontier->frontiers[i]->s;
+	tails[i] = &(frontier->frontiers[i]->m);
+	localTails[i] = &(frontier->frontiers[i]->tail);
+	signals[i] = &(frontier->frontiers[i]->emptySignal);
+    }
+
+    int tid = subworker.tid;
+    intT *localQueue = queues[tid];
+    intT *queueHead = &(frontier->frontiers[tid]->head);
+    intT *queueTail = &(frontier->frontiers[tid]->tail);
+    intT *localSignal = &(frontier->frontiers[tid]->emptySignal);
+    pthread_barrier_wait(subworker.local_barr);
+    if (subworker.isSubMaster()) {
+	printf("passed barrier\n");
+    }
+    int accumSize = 0;
+    while (1) {
+	//first fetch a block
+	intT currHead = 0;
+	intT currTail = 0;
+	intT endPos = 0;
+	do {
+	    currHead = *queueHead;
+	    currTail = *queueTail;
+	    endPos = MIN((currHead + BLOCK_SIZE), currTail);
+	} while (!CAS(queueHead, currHead, endPos));
+	
+	//then do it
+	intT actualSize = endPos - currHead;
+	accumSize += actualSize;
+	if (subworker.isSubMaster()&& actualSize != BLOCK_SIZE)
+	    printf("%d, %d : size == %d %d\n", subworker.tid, subworker.subTid, actualSize, accumSize);
+	if (actualSize > 0) {
+	    for (intT i = currHead % GA.n; i < endPos % GA.n; i = (i + 1) % GA.n) {
+		intT idx = localQueue[i];
+		intT d = V[idx].getOutDegree();
+		for (intT j = 0; j < d; j++) {
+		    intT ngh = V[idx].getOutNeighbor(j);
+		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
+			for (int k = 0; k < frontier->numOfNodes; k++) {
+			    int insertPos = 0;
+			    do {
+				insertPos = *(tails[k]);
+			    } while(!CAS(tails[k], insertPos, insertPos + 1));
+			    (queues[k])[insertPos % GA.n] = ngh;
+			    writeAdd(localTails[k], 1);
+			}
+		    }
+		}
+		f.vertUpdate(idx);
+	    }
+	} else {
+	    //check if we should end the computation
+	    bool shouldEnd = false;
+	    while (*queueTail - *queueHead <= 0) {
+		*localSignal = 1;
+		int accum = 0;
+		for (int i = 0; i < frontier->numOfNodes; i++) {
+		    if (*(signals[i]) == 2) {
+			shouldEnd = true;
+			break;
+		    }
+		    accum += *(signals[i]);
+		}
+		if (shouldEnd)
+		    break;
+		if (accum >= frontier->numOfNodes) {
+		    shouldEnd = true;
+		    *localSignal = 2;
+		    break;
+		}
+		*localSignal = 0;
+	    }
+	    if (shouldEnd) {
+		break;
+	    } else {
+		*localSignal = 0;
+	    }
+	}
+    }
 }
 
 template <class F, class vertex>

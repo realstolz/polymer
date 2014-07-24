@@ -294,6 +294,12 @@ void *mapDataArray(int numOfShards, int *sizeArr, int sizeOfOneEle) {
     return toBeReturned;
 }
 
+struct AsyncChunk {
+    int accessCounter;
+    intT m;
+    intT *s;
+};
+
 struct LocalFrontier {
     intT n;
     intT m;
@@ -330,7 +336,7 @@ struct LocalFrontier {
 	}
 	isDense = false;
     }
-
+    
     void toDense() {
 	if (!isDense) {
 	    {parallel_for(intT i=0;i<n;i++) b[i] = false;}
@@ -376,6 +382,8 @@ struct vertices {
     bool** d;
     LocalFrontier **frontiers;
     bool isDense;
+    AsyncChunk **asyncQueue;
+    intT insertTail;
     
     vertices(int _numOfNodes) {
 	this->numOfNodes = _numOfNodes;
@@ -679,100 +687,107 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     return NULL;
 }
 
+AsyncChunk *newChunk(int blockSize) {
+    AsyncChunk *myChunk = (AsyncChunk *)malloc(sizeof(AsyncChunk));
+    myChunk->s = (intT *)malloc(sizeof(intT) * blockSize);
+    myChunk->m = 0;
+    myChunk->accessCounter = 0;
+    return myChunk;
+}
+
 template <class F, class vertex>
 void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = NULL) {
     const int BLOCK_SIZE = 64;
     
-    vertex *V = GA.V;   
-    intT *queues[frontier->numOfNodes];
-    intT *tails[frontier->numOfNodes];
-    intT *localTails[frontier->numOfNodes];
-    intT *signals[frontier->numOfNodes];
-    if (subworker.isSubMaster()) {
-	frontier->frontiers[subworker.tid]->emptySignal = 0;
-    }
-
-    for (int i = 0; i < frontier->numOfNodes; i++) {
-	queues[i] = frontier->frontiers[i]->s;
-	tails[i] = &(frontier->frontiers[i]->m);
-	localTails[i] = &(frontier->frontiers[i]->tail);
-	signals[i] = &(frontier->frontiers[i]->emptySignal);
-    }
+    vertex *V = GA.V;
 
     int tid = subworker.tid;
-    intT *localQueue = queues[tid];
     intT *queueHead = &(frontier->frontiers[tid]->head);
-    intT *queueTail = &(frontier->frontiers[tid]->tail);
+    intT *queueTail = &(frontier->m);
+    intT *insertTail = &(frontier->insertTail);
+    intT *endSignal = &(frontier->frontiers[0]->emptySignal);
     intT *localSignal = &(frontier->frontiers[tid]->emptySignal);
+    *queueHead = 0;
+    *insertTail = *queueTail;
+    *localSignal = 0;
     pthread_barrier_wait(subworker.local_barr);
     if (subworker.isSubMaster()) {
 	printf("passed barrier\n");
     }
     int accumSize = 0;
+    AsyncChunk *myChunk = newChunk(BLOCK_SIZE);
     while (1) {
 	//first fetch a block
 	intT currHead = 0;
 	intT currTail = 0;
 	intT endPos = 0;
+	AsyncChunk *currChunk = NULL;
+	
 	do {
 	    currHead = *queueHead;
 	    currTail = *queueTail;
-	    endPos = MIN((currHead + BLOCK_SIZE), currTail);
+	    endPos = MIN(currHead + 1, currTail);
 	} while (!CAS(queueHead, currHead, endPos));
 	
-	//then do it
-	intT actualSize = endPos - currHead;
-	accumSize += actualSize;
-	if (subworker.isSubMaster()&& actualSize != BLOCK_SIZE)
-	    printf("%d, %d : size == %d %d\n", subworker.tid, subworker.subTid, actualSize, accumSize);
-	if (actualSize > 0) {
-	    for (intT i = currHead % GA.n; i < endPos % GA.n; i = (i + 1) % GA.n) {
-		intT idx = localQueue[i];
+	int reallyGotOne = endPos - currHead;
+	//printf("get: %d, %d\n", currHead, endPos);
+	if (reallyGotOne > 0) {
+	    //process chunk
+	    currChunk = frontier->asyncQueue[currHead % GA.n];
+	    //printf("chunk pointer: %p\n", currChunk);
+	    int chunkSize = currChunk->m;
+	    for (intT i = 0; i < chunkSize; i++) {
+		accumSize++;
+		intT idx = currChunk->s[i];
 		intT d = V[idx].getOutDegree();
 		for (intT j = 0; j < d; j++) {
 		    intT ngh = V[idx].getOutNeighbor(j);
 		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
-			for (int k = 0; k < frontier->numOfNodes; k++) {
-			    int insertPos = 0;
-			    do {
-				insertPos = *(tails[k]);
-			    } while(!CAS(tails[k], insertPos, insertPos + 1));
-			    (queues[k])[insertPos % GA.n] = ngh;
-			    writeAdd(localTails[k], 1);
+			//add ngh into chunk
+			myChunk->s[myChunk->m] = ngh;
+			myChunk->m += 1;
+			if (myChunk->m >= BLOCK_SIZE) {
+			    //if full, send it
+			    intT insertPos = __sync_fetch_and_add(insertTail, 1);
+			    frontier->asyncQueue[insertPos % GA.n] = myChunk;
+			    __sync_fetch_and_add(queueTail, 1);
+			    myChunk = newChunk(BLOCK_SIZE);
 			}
 		    }
 		}
-		f.vertUpdate(idx);
+	    }
+	    int oldCounter = __sync_fetch_and_add(&(currChunk->accessCounter), 1);
+	    oldCounter++;
+	    if (oldCounter >= frontier->numOfNodes) {
+		frontier->asyncQueue[currHead % GA.n] = NULL;
+		free(currChunk);
 	    }
 	} else {
-	    //check if we should end the computation
-	    bool shouldEnd = false;
-	    while (*queueTail - *queueHead <= 0) {
-		*localSignal = 1;
-		int accum = 0;
-		for (int i = 0; i < frontier->numOfNodes; i++) {
-		    if (*(signals[i]) == 2) {
-			shouldEnd = true;
-			break;
-		    }
-		    accum += *(signals[i]);
-		}
-		if (shouldEnd)
-		    break;
-		if (accum >= frontier->numOfNodes) {
-		    shouldEnd = true;
-		    *localSignal = 2;
-		    break;
-		}
-		*localSignal = 0;
+	    if (myChunk->m > 0) {
+		//send it
+		//printf("flush chunk with size: %d\n", myChunk->m);
+		intT insertPos = __sync_fetch_and_add(insertTail, 1);
+		frontier->asyncQueue[insertPos % GA.n] = myChunk;
+		__sync_fetch_and_add(queueTail, 1);
+		myChunk = newChunk(BLOCK_SIZE);
+		continue;
 	    }
-	    if (shouldEnd) {
+	    //end game part
+	    bool shouldExit = false;
+	    int oldSig = __sync_fetch_and_add(endSignal, 1);
+	    while (*queueTail <= *queueHead) {
+		if (*endSignal >= frontier->numOfNodes * subworker.numOfSub) {
+		    shouldExit = true;
+		    break;
+		}
+	    }
+	    if (shouldExit) {
 		break;
-	    } else {
-		*localSignal = 0;
 	    }
+	    __sync_fetch_and_add(endSignal, -1);
 	}
     }
+    printf("end loop: %d\n", accumSize);
 }
 
 template <class F, class vertex>

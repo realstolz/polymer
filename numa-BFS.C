@@ -193,7 +193,6 @@ void *BFSWorker(void *arg) {
     graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
     
     while (shouldStart == 0);
-    pthread_barrier_wait(&timerBarr);
     
     const intT n = GA.n;
     int numOfT = my_arg->numOfNode;
@@ -239,17 +238,35 @@ void *BFSWorker(void *arg) {
 
     int startPos = 0;
 
-    current->s = (intT *)numa_alloc_local(sizeof(intT) * GA.n);
-    current->s[0] = my_arg->start;
-    current->m = 1;
-    current->head = 0;
-    current->tail = 1;
-
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
     pthread_barrier_t localBarr2;
     pthread_barrier_init(&localBarr2, NULL, CORES_PER_NODE);
+
+    pthread_barrier_wait(&barr);
+    /*
+    if (tid == 0)
+	Frontier->toSparse();
+    */
+    /*
+    current->s = (intT *)malloc(sizeof(intT) * GA.n);
+    current->s[0] = my_arg->start;
+    current->m = 1;
+    current->head = 0;
+    current->tail = 1;
+    */
+
+    if (tid == 0) {
+	Frontier->asyncQueue = (AsyncChunk **)malloc(sizeof(AsyncChunk *) * GA.n / 20);
+	AsyncChunk *firstChunk = newChunk(64);
+	firstChunk->m = 1;
+	firstChunk->s[0] = my_arg->start;
+	Frontier->asyncQueue[0] = firstChunk;
+	Frontier->m = 1;
+    }
+
+    pthread_barrier_wait(&timerBarr);
 
     pthread_t subTids[CORES_PER_NODE];
     for (int i = 0; i < CORES_PER_NODE; i++) {	
@@ -307,9 +324,9 @@ struct PR_Hash_F {
 
 template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
-    numOfNode = numa_num_configured_nodes();
+    numOfNode = 1;//numa_num_configured_nodes();
     int numOfCpu = numa_num_configured_cpus();
-    CORES_PER_NODE = 1;//numOfCpu / numOfNode;
+    CORES_PER_NODE = 6;//numOfCpu / numOfNode;
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);

@@ -383,6 +383,7 @@ struct vertices {
     LocalFrontier **frontiers;
     bool isDense;
     AsyncChunk **asyncQueue;
+    int asyncEndSignal;
     intT insertTail;
     
     vertices(int _numOfNodes) {
@@ -705,11 +706,16 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
     intT *queueHead = &(frontier->frontiers[tid]->head);
     intT *queueTail = &(frontier->m);
     intT *insertTail = &(frontier->insertTail);
-    intT *endSignal = &(frontier->frontiers[0]->emptySignal);
+    intT *endSignal = &(frontier->asyncEndSignal);
     intT *localSignal = &(frontier->frontiers[tid]->emptySignal);
+    intT *signals[frontier->numOfNodes];
+    for (int i = 0; i < frontier->numOfNodes; i++) {
+	signals[i] = &(frontier->frontiers[tid]->emptySignal);
+    }
     *queueHead = 0;
     *insertTail = *queueTail;
     *localSignal = 0;
+    *endSignal = 0;
     pthread_barrier_wait(subworker.local_barr);
     if (subworker.isSubMaster()) {
 	printf("passed barrier\n");
@@ -732,6 +738,7 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
 	int reallyGotOne = endPos - currHead;
 	//printf("get: %d, %d\n", currHead, endPos);
 	if (reallyGotOne > 0) {
+	    *localSignal = 0;
 	    //process chunk
 	    currChunk = frontier->asyncQueue[currHead % GA.n];
 	    //printf("chunk pointer: %p\n", currChunk);
@@ -750,41 +757,57 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
 			    //if full, send it
 			    intT insertPos = __sync_fetch_and_add(insertTail, 1);
 			    frontier->asyncQueue[insertPos % GA.n] = myChunk;
-			    __sync_fetch_and_add(queueTail, 1);
+			    while (!CAS(queueTail, insertPos, insertPos+1));
 			    myChunk = newChunk(BLOCK_SIZE);
 			}
 		    }
 		}
 	    }
+	    /*
 	    int oldCounter = __sync_fetch_and_add(&(currChunk->accessCounter), 1);
 	    oldCounter++;
+	    
 	    if (oldCounter >= frontier->numOfNodes) {
 		frontier->asyncQueue[currHead % GA.n] = NULL;
 		free(currChunk);
 	    }
+	    */
 	} else {
 	    if (myChunk->m > 0) {
 		//send it
 		//printf("flush chunk with size: %d\n", myChunk->m);
 		intT insertPos = __sync_fetch_and_add(insertTail, 1);
 		frontier->asyncQueue[insertPos % GA.n] = myChunk;
-		__sync_fetch_and_add(queueTail, 1);
+		while (!CAS(queueTail, insertPos, insertPos+1));
+		//__sync_fetch_and_add(queueTail, 1);
 		myChunk = newChunk(BLOCK_SIZE);
 		continue;
 	    }
 	    //end game part
-	    bool shouldExit = false;
-	    int oldSig = __sync_fetch_and_add(endSignal, 1);
-	    while (*queueTail <= *queueHead) {
-		if (*endSignal >= frontier->numOfNodes * subworker.numOfSub) {
-		    shouldExit = true;
-		    break;
-		}
-	    }
-	    if (shouldExit) {
+	    //pthread_barrier_wait(subworker.local_barr);
+	    if (*endSignal == 1) {
 		break;
 	    }
-	    __sync_fetch_and_add(endSignal, -1);
+	    if (subworker.isMaster()) {
+		//marker algorithm
+		*localSignal = 1;
+		int i = 0;
+		int marker = 1;
+		while (*localSignal == 1) {
+		    i = (i + 1) % frontier->numOfNodes;
+		    if (*(signals[i]) == 1) {
+			marker++;
+		    } else {
+			marker = 0;
+		    }
+		    *(signals[i]) = 1;
+		    if (marker > frontier->numOfNodes) {
+			*endSignal = 1;
+			break;
+		    }
+		}
+	    }
+	    //pthread_barrier_wait(subworker.local_barr);
 	}
     }
     printf("end loop: %d\n", accumSize);

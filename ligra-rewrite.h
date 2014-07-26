@@ -220,6 +220,25 @@ void graphHasher(graph<vertex> &GA, Hash_F hash) {
     free(V);
 }
 
+template <class vertex, class Hash_F>
+void graphInEdgeHasher(graph<vertex> &GA, Hash_F hash) {
+    vertex *V = GA.V;
+    vertex *newVertexSet = (vertex *)malloc(sizeof(vertex) * GA.n);
+
+    {parallel_for (intT i = 0; i < GA.n; i++) {
+	    intT d = V[i].getInDegree();
+	    //V[i].setFakeDegree(d);
+	    intE *inEdges = V[i].getInNeighborPtr();
+	    for (intT j = 0; j < d; j++) {
+		inEdges[j] = hash.hashFunc(inEdges[j]);
+	    }
+	    newVertexSet[hash.hashFunc(i)] = V[i];	    
+	}
+    }
+    GA.V = newVertexSet;
+    free(V);
+}
+
 template <class vertex>
 graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
     vertex *V = GA.V;
@@ -609,10 +628,13 @@ enum options {
 //*****EDGE FUNCTIONS*****
 
 template <class F, class vertex>
-bool* edgeMapDense(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0) {
+bool* edgeMapDense(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
     intT numVertices = GA.n;
+    intT size = next->endID - next->startID;
     vertex *G = GA.V;
-    for (intT i=next->startID; i<next->endID; i++){
+    intT startPos = subworker.getStartPos(size);
+    intT endPos = subworker.getEndPos(size);
+    for (intT i = startPos + next->startID; i < endPos + next->startID; i++){
 	next->setBit(i, false);
 	if (f.cond(i)) { 
 	    intT d = G[i].getInDegree();
@@ -1174,7 +1196,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	
 	bool* R = (option == DENSE_FORWARD) ? 
 	    edgeMapDenseForward(GA, V, f, next, part, start, end) : 
-	    edgeMapDense(GA, V, f, next, option);
+	    edgeMapDense(GA, V, f, next, option, subworker);
 	next->isDense = true;
     } else {
 	//Sparse part

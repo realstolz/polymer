@@ -384,6 +384,7 @@ struct vertices {
     bool isDense;
     AsyncChunk **asyncQueue;
     int asyncEndSignal;
+    intT readerTail;
     intT insertTail;
     
     vertices(int _numOfNodes) {
@@ -703,12 +704,12 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
     vertex *V = GA.V;
 
     int tid = subworker.tid;
-    intT *queueHead = &(frontier->frontiers[tid]->head);
-    intT *queueTail = &(frontier->m);
-    intT *insertTail = &(frontier->insertTail);
-    intT *endSignal = &(frontier->asyncEndSignal);
-    intT *localSignal = &(frontier->frontiers[tid]->emptySignal);
-    intT *signals[frontier->numOfNodes];
+    volatile intT *queueHead = &(frontier->frontiers[tid]->head);
+    volatile intT *queueTail = &(frontier->readerTail);
+    volatile intT *insertTail = &(frontier->insertTail);
+    volatile intT *endSignal = &(frontier->asyncEndSignal);
+    volatile intT *localSignal = &(frontier->frontiers[tid]->emptySignal);
+    volatile intT *signals[frontier->numOfNodes];
     for (int i = 0; i < frontier->numOfNodes; i++) {
 	signals[i] = &(frontier->frontiers[tid]->emptySignal);
     }
@@ -722,25 +723,38 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
     }
     int accumSize = 0;
     AsyncChunk *myChunk = newChunk(BLOCK_SIZE);
-    while (1) {
+    bool shouldFinish = false;
+    while (!shouldFinish) {
 	//first fetch a block
-	intT currHead = 0;
-	intT currTail = 0;
+	volatile intT currHead = 0;
+	volatile intT currTail = 0;
 	intT endPos = 0;
 	AsyncChunk *currChunk = NULL;
-	
+	/*
+	if (*endSignal == 1) {
+	    printf("spin: %d %d %d %d %d\n", subworker.tid, subworker.subTid, currHead, currTail, endPos);
+	}
+	*/
 	do {
 	    currHead = *queueHead;
 	    currTail = *queueTail;
 	    endPos = MIN(currHead + 1, currTail);
-	} while (!CAS(queueHead, currHead, endPos));
+	} while (!__sync_bool_compare_and_swap((intT *)queueHead, currHead, endPos));
 	
 	int reallyGotOne = endPos - currHead;
 	//printf("get: %d, %d\n", currHead, endPos);
 	if (reallyGotOne > 0) {
 	    *localSignal = 0;
+	    
+	    if (*endSignal == 1) {
+		//printf("possible? %d %d %d\n", currHead, endPos, currTail);
+	    }
+	    
 	    //process chunk
 	    currChunk = frontier->asyncQueue[currHead % GA.n];
+	    if (currChunk == NULL) {
+		printf("oops: %p %p %d %d %d\n", currChunk, frontier->asyncQueue[currHead % GA.n], currHead, currTail, endPos);
+	    }
 	    //printf("chunk pointer: %p\n", currChunk);
 	    int chunkSize = currChunk->m;
 	    for (intT i = 0; i < chunkSize; i++) {
@@ -756,8 +770,20 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
 			if (myChunk->m >= BLOCK_SIZE) {
 			    //if full, send it
 			    intT insertPos = __sync_fetch_and_add(insertTail, 1);
+			    /*
+			    if (*endSignal == 1)
+				printf("before insert %d %d %d\n", *queueTail, insertPos, *insertTail);
+			    */
 			    frontier->asyncQueue[insertPos % GA.n] = myChunk;
-			    while (!CAS(queueTail, insertPos, insertPos+1));
+			    //__asm__ __volatile__ ("mfence\n":::);
+			    while (!__sync_bool_compare_and_swap((intT *)queueTail, insertPos, insertPos+1)) {				
+				if (*queueTail > insertPos) {
+				    break;
+				    printf("pending on insert %d %d %d\n", *queueTail, insertPos, *insertTail);
+				}
+				
+			    }
+			    //printf("insert over: %d %d\n", insertPos, *queueTail);
 			    myChunk = newChunk(BLOCK_SIZE);
 			}
 		    }
@@ -778,15 +804,24 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
 		//printf("flush chunk with size: %d\n", myChunk->m);
 		intT insertPos = __sync_fetch_and_add(insertTail, 1);
 		frontier->asyncQueue[insertPos % GA.n] = myChunk;
-		while (!CAS(queueTail, insertPos, insertPos+1));
+		//__asm__ __volatile__ ("mfence\n":::);
+		while (!__sync_bool_compare_and_swap((intT *)queueTail, insertPos, insertPos+1)) {
+		    if (*queueTail > insertPos) {
+			break;
+			printf("pending on insert %d %d %d\n", *queueTail, insertPos, *insertTail);
+		    }
+		}
+		//printf("insert over: %d %d\n", insertPos, *queueTail);
 		//__sync_fetch_and_add(queueTail, 1);
 		myChunk = newChunk(BLOCK_SIZE);
 		continue;
 	    }
 	    //end game part
 	    //pthread_barrier_wait(subworker.local_barr);
+	    //printf("%d %d here %d %d\n", subworker.tid, subworker.subTid, currHead, currTail);
 	    if (*endSignal == 1) {
-		break;
+		//printf("%d %d and here %d %d\n", subworker.tid, subworker.subTid, currHead, currTail);
+		shouldFinish = true;
 	    }
 	    if (subworker.isMaster()) {
 		//marker algorithm
@@ -794,6 +829,7 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
 		int i = 0;
 		int marker = 1;
 		while (*localSignal == 1) {
+		    //printf("checking\n");
 		    i = (i + 1) % frontier->numOfNodes;
 		    if (*(signals[i]) == 1) {
 			marker++;
@@ -803,6 +839,8 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
 		    *(signals[i]) = 1;
 		    if (marker > frontier->numOfNodes) {
 			*endSignal = 1;
+			printf("master out\n");
+			shouldFinish = true;
 			break;
 		    }
 		}
@@ -810,7 +848,7 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
 	    //pthread_barrier_wait(subworker.local_barr);
 	}
     }
-    printf("end loop: %d\n", accumSize);
+    //printf("end loop of %d %d: %d\n", subworker.tid, subworker.subTid, accumSize);
 }
 
 template <class F, class vertex>

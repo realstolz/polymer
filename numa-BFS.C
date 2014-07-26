@@ -259,10 +259,12 @@ void *BFSWorker(void *arg) {
 
     if (tid == 0) {
 	Frontier->asyncQueue = (AsyncChunk **)malloc(sizeof(AsyncChunk *) * GA.n);
+	{parallel_for(intT i = 0; i < GA.n; i++) Frontier->asyncQueue[i] = NULL;}
 	AsyncChunk *firstChunk = newChunk(64);
 	firstChunk->m = 1;
 	firstChunk->s[0] = my_arg->start;
 	Frontier->asyncQueue[0] = firstChunk;
+	Frontier->readerTail = 1;
 	Frontier->m = 1;
     }
 
@@ -326,7 +328,7 @@ template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
     numOfNode = 8;//numa_num_configured_nodes();
     int numOfCpu = numa_num_configured_cpus();
-    CORES_PER_NODE = 1;//numOfCpu / numOfNode;
+    CORES_PER_NODE = 6;//numOfCpu / numOfNode;
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);

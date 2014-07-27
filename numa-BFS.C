@@ -50,6 +50,10 @@ bool needResult = false;
 struct BFS_F {
     intT* Parents;
     BFS_F(intT* _Parents) : Parents(_Parents) {}
+
+    inline void *nextPrefetchAddr(intT index) {
+	return NULL;
+    }
     inline bool update (intT s, intT d) { //Update
 	if(Parents[d] == -1) { Parents[d] = s; return 1; }
 	else return 0;

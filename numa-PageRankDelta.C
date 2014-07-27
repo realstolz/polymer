@@ -57,34 +57,37 @@ Default_Hash_F *hasher2;
 
 template <class vertex>
 struct PR_F {
-  vertex* V;
-  double* Delta, *nghSum;
-  PR_F(vertex* _V, double* _Delta, double* _nghSum) : 
-    V(_V), Delta(_Delta), nghSum(_nghSum) {}
-  inline bool update(intT s, intT d){
-    nghSum[d] += Delta[s]/V[s].getOutDegree();
-    return 1;
-  }
-  inline bool updateAtomic (intT s, intT d) {
-    writeAdd(&nghSum[d],Delta[s]/V[s].getOutDegree());
-    /*
-    if (needLog && d == 1 && s == 657797) {
-	cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << Delta[s]/V[s].getOutDegree() << " -- " << nghSum[d] << "\n";
+    vertex* V;
+    double* Delta, *nghSum;
+    PR_F(vertex* _V, double* _Delta, double* _nghSum) : 
+	V(_V), Delta(_Delta), nghSum(_nghSum) {}
+    inline void *nextPrefetchAddr(intT index) {
+	return NULL;
     }
-    */
-    return 1;
-  }
-  inline bool cond (intT d) { return 1; }
+    inline bool update(intT s, intT d){
+	nghSum[d] += Delta[s]/V[s].getOutDegree();
+	return 1;
+    }
+    inline bool updateAtomic (intT s, intT d) {
+	writeAdd(&nghSum[d],Delta[s]/V[s].getOutDegree());
+	/*
+	  if (needLog && d == 1 && s == 657797) {
+	  cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << Delta[s]/V[s].getOutDegree() << " -- " << nghSum[d] << "\n";
+	  }
+	*/
+	return 1;
+    }
+    inline bool cond (intT d) { return 1; }
 };
 
 struct PR_Vertex_F_FirstRound {
-  double damping, addedConstant, one_over_n, epsilon2;
-  double* p, *Delta, *nghSum;
-  PR_Vertex_F_FirstRound(double* _p, double* _Delta, double* _nghSum, double _damping, double _one_over_n,double _epsilon2) :
-    p(_p),
-    damping(_damping), Delta(_Delta), nghSum(_nghSum), one_over_n(_one_over_n),
-    addedConstant((1-_damping)*_one_over_n),
-    epsilon2(_epsilon2) {}
+    double damping, addedConstant, one_over_n, epsilon2;
+    double* p, *Delta, *nghSum;
+    PR_Vertex_F_FirstRound(double* _p, double* _Delta, double* _nghSum, double _damping, double _one_over_n,double _epsilon2) :
+	p(_p),
+	damping(_damping), Delta(_Delta), nghSum(_nghSum), one_over_n(_one_over_n),
+	addedConstant((1-_damping)*_one_over_n),
+	epsilon2(_epsilon2) {}
     inline bool operator () (intT i) {
 	Delta[i] = damping*(p[i]+nghSum[i])+addedConstant-p[i];
 	p[i] += Delta[i];
@@ -265,8 +268,8 @@ void *PageRankThread(void *arg) {
     
     
     /*
-    if (tid == 0)
-	startTime();
+      if (tid == 0)
+      startTime();
     */
     double mapTime = 0.0;
     struct timeval start, end;
@@ -368,8 +371,8 @@ void *PageRankThread(void *arg) {
 	/*
 	//compute L1-norm (use nghSum as temp array)
 	{parallel_for(intT i=0;i<n;i++) {
-		nghSum[i] = fabs(Delta[i]);
-	    }}
+	nghSum[i] = fabs(Delta[i]);
+	}}
 	double L1_norm = sequence::plusReduce(nghSum,n);
 	//cout<<"L1 norm = "<<L1_norm<<endl;
 
@@ -428,10 +431,10 @@ void PageRankDelta(graph<vertex> &GA, int maxIter = -1) {
     graphHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
     /*
-    for (int i = 0; i < numOfNode; i++) {
-	cout << sizeArr[i] << "\n";
-    }
-    return;
+      for (int i = 0; i < numOfNode; i++) {
+      cout << sizeArr[i] << "\n";
+      }
+      return;
     */
     delta_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
     nghSum_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));

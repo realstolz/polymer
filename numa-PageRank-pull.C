@@ -234,7 +234,7 @@ void *PageRankThread(void *arg) {
 
     int sizeOfShards[CORES_PER_NODE];
 
-    subPartitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(double), true, false);
+    subPartitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(double), rangeLow, rangeHi);
     
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
@@ -323,8 +323,8 @@ void *PageRankThread(void *arg) {
 	arg->node_barr = &localBarr;
 	arg->localFrontier = output;
 	
-	arg->startPos = startPos;
-	arg->endPos = startPos + sizeOfShards[i];
+	arg->startPos = startPos + rangeLow;
+	arg->endPos = startPos + rangeLow + sizeOfShards[i];
 	startPos = arg->endPos;
         pthread_create(&subTids[i], NULL, PageRankSubWorker<vertex>, (void *)arg);
     }
@@ -405,7 +405,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
-    graphHasher(GA, hasher);
+    graphInEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
     
     p_curr_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));

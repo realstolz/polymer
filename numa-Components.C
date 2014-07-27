@@ -51,6 +51,9 @@ struct CC_F {
     intT* prevIDs;
     CC_F(intT* _IDs, intT* _prevIDs) : 
 	IDs(_IDs), prevIDs(_prevIDs) {}
+    inline void *nextPrefetchAddr(intT index) {
+	return NULL;
+    }
     inline bool update(intT s, intT d){ //Update function writes min ID
 	intT origID = IDs[d];
 	if(IDs[s] < origID) {

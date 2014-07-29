@@ -191,18 +191,18 @@ bool* edgeMapDensePull(graph<vertex> GA, bool* vertices, F f, bool parallel = 0)
   bool* next = newA(bool,numVertices);
   {parallel_for (intT i=0; i<numVertices; i++){
     next[i] = 0;
-    if (f.cond(i) && vertices[i]) { 
+    if (f.cond(i)) { 
       intT d = G[i].getInDegree();
       if(!parallel || d < 1000) {
 	for(intT j=0; j<d; j++){
 	  intT ngh = G[i].getInNeighbor(j);
-	  if (f.update(ngh,i)) next[i] = 1;
+	  if (vertices[i] && f.update(ngh,i)) next[i] = 1;
 	  if(!f.cond(i)) break;
 	}
       } else {
 	{parallel_for(intT j=0; j<d; j++){
 	  intT ngh = G[i].getInNeighbor(j);
-	  if (f.updateAtomic(ngh,i)) next[i] = 1;
+	  if (vertices[i] && f.updateAtomic(ngh,i)) next[i] = 1;
 	  }}
       }
     }

@@ -71,13 +71,13 @@ struct PR_F {
     inline bool updateAtomic (intT s, intT d) { //atomic Update
 	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
 	/*
-	if (d == 110101) {
+	if (d == 0) {
 	    cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << p_curr[s]/V[s].getOutDegree() << " -- " << p_next[d] << "\n";
 	}
 	*/
 	return 1;
     }
-    inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
+    inline bool cond (intT d) { return true; } //does nothing
 };
 
 //vertex map function to update its p value according to PageRank equation
@@ -201,9 +201,9 @@ void *PageRankSubWorker(void *arg) {
 	if (subworker.isSubMaster()) {
 	    pthread_barrier_wait(&global_barr);
 	    switchFrontier(tid, Frontier, output);
+	    nexts[tid] = output;
 	} else {
 	    output = Frontier->getFrontier(tid);
-	    nexts[tid] = output;
 	    pthread_barrier_wait(&global_barr);
 	}
 	//pthread_barrier_wait(local_barr);
@@ -236,7 +236,7 @@ void *PageRankThread(void *arg) {
 
     int sizeOfShards[CORES_PER_NODE];
 
-    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), false, false);
+    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), false, true);
     
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
@@ -298,7 +298,7 @@ void *PageRankThread(void *arg) {
     LocalFrontier *output = new LocalFrontier(next, rangeLow, rangeHi);
 
     pthread_barrier_wait(&barr);
-    
+    nexts[tid] = output;
     Frontier->registerFrontier(tid, current);
 
     pthread_barrier_wait(&barr);
@@ -409,7 +409,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
-    graphHasher(GA, hasher);
+    graphInEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double), true);
     
     p_curr_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));

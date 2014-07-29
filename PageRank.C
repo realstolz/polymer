@@ -41,7 +41,7 @@ struct PR_F {
   inline bool updateAtomic (intT s, intT d) { //atomic Update
     writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
     /*
-    if (d == 110101) {
+    if (d == 0) {
 	cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << p_curr[s]/V[s].getOutDegree() << " -- " << p_next[d] << "\n";
     }
     */

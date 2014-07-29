@@ -293,10 +293,9 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi, bool use
     {parallel_for (intT i = 0; i < GA.n; i++) {
 	    intT d = (useOutEdge) ? (V[i].getOutDegree()) : (V[i].getInDegree());
 	    //V[i].setFakeDegree(d);
-	    if (useOutEdge)
-		newVertexSet[i].setOutDegree(d);
-	    else 
-		newVertexSet[i].setInDegree(d);
+	    newVertexSet[i].setOutDegree(V[i].getOutDegree());
+	    newVertexSet[i].setInDegree(V[i].getInDegree());
+
 	    counters[i] = 0;
 	    for (intT j = 0; j < d; j++) {
 		intT ngh = (useOutEdge) ? (V[i].getOutNeighbor(j)) : (V[i].getInNeighbor(j));
@@ -330,6 +329,9 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi, bool use
 	    }
 	    if (counter != newVertexSet[i].getFakeDegree()) {
 		printf("oops: %d %d\n", counter, newVertexSet[i].getFakeDegree());
+	    }
+	    if (i == 0) {
+		printf("fake deg: %d\n", newVertexSet[i].getFakeDegree());
 	    }
 	    if (useOutEdge)
 		newVertexSet[i].setOutNeighbors(localEdges);
@@ -778,6 +780,8 @@ bool* edgeMapDenseForwardGlobalWrite(graph<vertex> GA, vertices *frontier, F f, 
     
     int startPos = subworker.dense_start;
     int endPos = subworker.dense_end;
+
+    //printf("%d %d: start-end: %d %d\n", subworker.tid, subworker.subTid, startPos, endPos);
 
     int currNodeNum = frontier->getNodeNumOfIndex(startPos);
     bool *nextBitVector = nexts[currNodeNum]->b;

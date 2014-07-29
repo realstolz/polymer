@@ -50,6 +50,7 @@ pthread_barrier_t global_barr;
 pthread_mutex_t mut;
 
 vertices *Frontier;
+LocalFrontier **nexts;
 
 template <class vertex>
 struct PR_F {
@@ -69,6 +70,11 @@ struct PR_F {
     }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
 	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
+	/*
+	if (d == 110101) {
+	    cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << p_curr[s]/V[s].getOutDegree() << " -- " << p_next[d] << "\n";
+	}
+	*/
 	return 1;
     }
     inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
@@ -173,7 +179,7 @@ void *PageRankSubWorker(void *arg) {
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
 
-        edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_PARALLEL, false, true, subworker);
+        edgeMapDenseForwardGlobalWrite(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),nexts,subworker);
 
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
@@ -197,6 +203,7 @@ void *PageRankSubWorker(void *arg) {
 	    switchFrontier(tid, Frontier, output);
 	} else {
 	    output = Frontier->getFrontier(tid);
+	    nexts[tid] = output;
 	    pthread_barrier_wait(&global_barr);
 	}
 	//pthread_barrier_wait(local_barr);
@@ -225,11 +232,11 @@ void *PageRankThread(void *arg) {
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
 
-    //graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi, false);
 
     int sizeOfShards[CORES_PER_NODE];
 
-    subPartitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(double), rangeLow, rangeHi);
+    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), false, false);
     
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
@@ -277,8 +284,10 @@ void *PageRankThread(void *arg) {
     for(intT i=rangeLow;i<rangeHi;i++) p_curr[i] = one_over_n;
     for(intT i=rangeLow;i<rangeHi;i++) p_next[i] = 0; //0 if unchanged
     for(intT i=0;i<blockSize;i++) frontier[i] = true;
-    if (tid == 0)
+    if (tid == 0) {
 	Frontier = new vertices(numOfT);
+	nexts = (LocalFrontier **)malloc(sizeof(LocalFrontier *) * numOfT);
+    }
 
     //printf("register %d: %p\n", tid, frontier);
     
@@ -306,7 +315,7 @@ void *PageRankThread(void *arg) {
 
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	PR_subworker_arg *arg = (PR_subworker_arg *)malloc(sizeof(PR_subworker_arg));
-	arg->GA = (void *)(&GA);
+	arg->GA = (void *)(&localGraph);
 	arg->maxIter = maxIter;
 	arg->tid = tid;
 	arg->subTid = i;
@@ -318,9 +327,9 @@ void *PageRankThread(void *arg) {
 	arg->node_barr = &localBarr;
 	arg->localFrontier = output;
 	
-	arg->startPos = startPos + rangeLow;
-	arg->endPos = startPos + rangeLow + sizeOfShards[i];
-	startPos = startPos + sizeOfShards[i];
+	arg->startPos = startPos;
+	arg->endPos = startPos + sizeOfShards[i];
+	startPos = arg->endPos;
         pthread_create(&subTids[i], NULL, PageRankSubWorker<vertex>, (void *)arg);
     }
 
@@ -400,8 +409,8 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
-    graphInEdgeHasher(GA, hasher);
-    partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
+    graphHasher(GA, hasher);
+    partitionByDegree(GA, numOfNode, sizeArr, sizeof(double), true);
     
     p_curr_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
     p_next_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
@@ -452,12 +461,12 @@ int parallel_main(int argc, char* argv[]) {
 	graph<symmetricVertex> G = 
 	    readGraph<symmetricVertex>(iFile,symmetric,binary);
 	PageRank(G, maxIter);
-	//G.del(); 
+	G.del(); 
     } else {
 	graph<asymmetricVertex> G = 
 	    readGraph<asymmetricVertex>(iFile,symmetric,binary);
 	PageRank(G, maxIter);
-	//G.del();
+	G.del();
     }
     return 0;
 }

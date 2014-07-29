@@ -285,18 +285,21 @@ void graphInEdgeHasher(graph<vertex> &GA, Hash_F hash) {
 }
 
 template <class vertex>
-graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
+graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi, bool useOutEdge=true) {
     vertex *V = GA.V;
     vertex *newVertexSet = (vertex *)numa_alloc_local(sizeof(vertex) * GA.n);
     int *counters = (int *)numa_alloc_local(sizeof(int) * GA.n);
     int *offsets = (int *)numa_alloc_local(sizeof(int) * GA.n);
     {parallel_for (intT i = 0; i < GA.n; i++) {
-	    intT d = V[i].getOutDegree();
+	    intT d = (useOutEdge) ? (V[i].getOutDegree()) : (V[i].getInDegree());
 	    //V[i].setFakeDegree(d);
-	    newVertexSet[i].setOutDegree(d);
+	    if (useOutEdge)
+		newVertexSet[i].setOutDegree(d);
+	    else 
+		newVertexSet[i].setInDegree(d);
 	    counters[i] = 0;
 	    for (intT j = 0; j < d; j++) {
-		intT ngh = V[i].getOutNeighbor(j);
+		intT ngh = (useOutEdge) ? (V[i].getOutNeighbor(j)) : (V[i].getInNeighbor(j));
 		if (rangeLow <= ngh && ngh < rangeHi)
 		    counters[i]++;
 	    }
@@ -317,9 +320,9 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
     {parallel_for (intT i = 0; i < GA.n; i++) {
 	    intE *localEdges = &edges[offsets[i]];
 	    intT counter = 0;
-	    intT d = V[i].getOutDegree();
+	    intT d = (useOutEdge) ? (V[i].getOutDegree()) : (V[i].getInDegree());
 	    for (intT j = 0; j < d; j++) {
-		intT ngh = V[i].getOutNeighbor(j);
+		intT ngh = (useOutEdge) ? (V[i].getOutNeighbor(j)) : (V[i].getInNeighbor(j));
 		if (rangeLow <= ngh && ngh < rangeHi) {
 		    localEdges[counter] = ngh;
 		    counter++;
@@ -328,7 +331,10 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi) {
 	    if (counter != newVertexSet[i].getFakeDegree()) {
 		printf("oops: %d %d\n", counter, newVertexSet[i].getFakeDegree());
 	    }
-	    newVertexSet[i].setOutNeighbors(localEdges);
+	    if (useOutEdge)
+		newVertexSet[i].setOutNeighbors(localEdges);
+	    else
+		newVertexSet[i].setInNeighbors(localEdges);
 	}
     }
     numa_free(offsets, sizeof(int) * GA.n);
@@ -681,14 +687,14 @@ bool* edgeMapDense(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *nex
     intT endPos = subworker.dense_end;
     bool *bitVec = frontier->getArr(subworker.tid);
     for (intT i = startPos; i < endPos; i++){
-	next->setBit(i - next->startID, false);
-	if (bitVec[i - next->startID]) { 
+	next->setBit(i, false);
+	if (f.cond(i) && bitVec[i - next->startID]) { 
 	    intT d = G[i].getInDegree();
 	    for(intT j=0; j<d; j++){
 		intT ngh = G[i].getInNeighbor(j);
-		if (f.update(ngh,i)) next->setBit(i - next->startID, true);
+		if (f.update(ngh,i)) next->setBit(i, true);
 		if(!f.cond(i)) break;
-		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
+		__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
 	    }
 	}
     }
@@ -755,6 +761,47 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     //writeAdd(&(next->m), m);
     //writeAdd(&(next->outEdgesCount), outEdgesCount);
     //printf("edgeMap: %d %d\n", m, outEdgesCount);
+    return NULL;
+}
+
+template <class F, class vertex>
+bool* edgeMapDenseForwardGlobalWrite(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *nexts[], Subworker_Partitioner &subworker) {
+    intT numVertices = GA.n;
+    vertex *G = GA.V;
+
+    bool *currBitVector = frontier->getArr(subworker.tid);
+    int currOffset = frontier->getOffset(subworker.tid);
+    int counter = 0;
+
+    intT m = 0;
+    intT outEdgesCount = 0;
+    
+    int startPos = subworker.dense_start;
+    int endPos = subworker.dense_end;
+
+    int currNodeNum = frontier->getNodeNumOfIndex(startPos);
+    bool *nextBitVector = nexts[currNodeNum]->b;
+    intT nextSwitchPoint = frontier->getOffset(currNodeNum+1);
+    int offset = frontier->getOffset(currNodeNum);
+
+    for (long i=startPos; i<endPos; i++){
+	if (i == nextSwitchPoint) {
+	    offset += frontier->getSize(currNodeNum);
+	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	    currNodeNum++;
+	    nextBitVector = nexts[currNodeNum]->b;
+	}
+	m += G[i].getFakeDegree();
+	if (f.cond(i)) {
+	    intT d = G[i].getFakeDegree();
+	    for(intT j=0; j<d; j++){
+		uintT ngh = G[i].getInNeighbor(j);
+		if (currBitVector[ngh-currOffset] && f.updateAtomic(ngh, i)) {
+		    nextBitVector[i-offset] = true;
+		}
+	    }
+	}
+    }
     return NULL;
 }
 

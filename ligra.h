@@ -185,6 +185,32 @@ template <class F, class vertex>
 }
 
 template <class F, class vertex>
+bool* edgeMapDensePull(graph<vertex> GA, bool* vertices, F f, bool parallel = 0) {
+  intT numVertices = GA.n;
+  vertex *G = GA.V;
+  bool* next = newA(bool,numVertices);
+  {parallel_for (intT i=0; i<numVertices; i++){
+    next[i] = 0;
+    if (f.cond(i) && vertices[i]) { 
+      intT d = G[i].getInDegree();
+      if(!parallel || d < 1000) {
+	for(intT j=0; j<d; j++){
+	  intT ngh = G[i].getInNeighbor(j);
+	  if (f.update(ngh,i)) next[i] = 1;
+	  if(!f.cond(i)) break;
+	}
+      } else {
+	{parallel_for(intT j=0; j<d; j++){
+	  intT ngh = G[i].getInNeighbor(j);
+	  if (f.updateAtomic(ngh,i)) next[i] = 1;
+	  }}
+      }
+    }
+    }}
+  return next;
+}
+
+template <class F, class vertex>
 bool* edgeMapDenseForward(graph<vertex> GA, bool* vertices, F f) {
   intT numVertices = GA.n;
   vertex *G = GA.V;
@@ -286,7 +312,7 @@ vertices edgeMap(graph<vertex> GA, vertices V, F f, intT threshold = -1,
     free(frontierVertices);
     bool* R = (option == DENSE_FORWARD) ? 
       edgeMapDenseForward(GA,V.d,f) : 
-      edgeMapDense(GA, V.d, f, option);
+      edgeMapDensePull(GA, V.d, f, option);
     vertices v1 = vertices(numVertices, R);
     //cout << "size (D) = " << v1.m << endl;
     return  v1;

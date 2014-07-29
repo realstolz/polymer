@@ -26,6 +26,8 @@
 #include "math.h"
 using namespace std;
 
+bool needResult = false;
+
 template <class vertex>
 struct PR_F {
   double* p_curr, *p_next;
@@ -52,7 +54,7 @@ struct PR_Vertex_F {
   PR_Vertex_F(double* _p_curr, double* _p_next, double _damping, intT n) :
     p_curr(_p_curr), p_next(_p_next), 
     damping(_damping), addedConstant((1-_damping)*(1/(double)n)){}
-  inline bool operator () (intT i) {
+  inline bool operator () (intT i) {	  
     p_next[i] = damping*p_next[i] + addedConstant;
     return 1;
   }
@@ -146,9 +148,14 @@ void PageRank(graph<vertex> GA, int maxIter = -1) {
   }
   cout<<"Finished in "<<round<<" iterations\n";
   Frontier.del();
-  free(p_curr); free(p_next); 
   nextTime("PageRank");
   printf("total init time: %lf\n", mapTime);
+  if (needResult) {
+      for (intT i = 0; i < GA.n; i++) {
+	  cout << i << "\t" << std::scientific << std::setprecision(9)<< p_curr[i] << "\n";
+      }
+  }
+  free(p_curr); free(p_next);
 }
 
 int parallel_main(int argc, char* argv[]) {  
@@ -156,10 +163,12 @@ int parallel_main(int argc, char* argv[]) {
   bool binary = false;
   bool symmetric = false;
   int maxIter = -1;
+  needResult = false;
   if(argc > 1) iFile = argv[1];
   if(argc > 2) maxIter = atoi(argv[2]);
-  if(argc > 3) if((string) argv[3] == (string) "-s") symmetric = true;
-  if(argc > 4) if((string) argv[4] == (string) "-b") binary = true;
+  if(argc > 3) if((string) argv[3] == (string) "-result") needResult = true;
+  if(argc > 4) if((string) argv[4] == (string) "-s") symmetric = true;
+  if(argc > 5) if((string) argv[5] == (string) "-b") binary = true;
 
   if(symmetric) {
     graph<symmetricVertex> G = 

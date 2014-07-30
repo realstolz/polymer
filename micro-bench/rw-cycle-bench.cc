@@ -86,7 +86,7 @@ void *sayHello(void *arg_ptr) {
 	ptr = (int *)*otherPos;
 	int bufSum = 0;
 	for (i = 0; i < (REGION_SIZE / sizeof(int)); i++) {
-	    int idx = randomAccess?(rand() % numOfInt):i;
+	    int idx = randomAccess?ptr[i]:i;
 	    int val = ptr[idx];
 	    //bufSum += val;
 	    uint64_t t = rdtsc();
@@ -106,7 +106,7 @@ void *sayHello(void *arg_ptr) {
 	ptr = (int *)*myPos;
 	int bufSum = 0;
 	for (i = 0; i < (REGION_SIZE / sizeof(int)); i++) {
-	    int idx = randomAccess?(rand() % numOfInt):i;
+	    int idx = randomAccess?buf[i]:i;
 	    int val = buf[idx];
 	    //bufSum += val;
 	    uint64_t t = rdtsc();

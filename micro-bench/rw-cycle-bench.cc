@@ -86,12 +86,13 @@ void *sayHello(void *arg_ptr) {
 	ptr = (int *)*otherPos;
 	int bufSum = 0;
 	for (i = 0; i < (REGION_SIZE / sizeof(int)); i++) {
-	    int idx = randomAccess?ptr[i]:i;
+	    int idx = randomAccess?(rand() % numOfInt):i;
 	    int val = ptr[idx];
 	    //bufSum += val;
 	    uint64_t t = rdtsc();
 	    ptr[idx] = (val * val) % numOfInt;
-	    cycleSum += rdtsc() - t;
+	    uint64_t t2 = rdtsc();
+	    cycleSum = cycleSum + (t2 - t);
 	    if (ptr[idx] < 0)
 		ptr[idx] = 0;	    
 	}
@@ -105,12 +106,13 @@ void *sayHello(void *arg_ptr) {
 	ptr = (int *)*myPos;
 	int bufSum = 0;
 	for (i = 0; i < (REGION_SIZE / sizeof(int)); i++) {
-	    int idx = randomAccess?buf[i]:i;
+	    int idx = randomAccess?(rand() % numOfInt):i;
 	    int val = buf[idx];
 	    //bufSum += val;
 	    uint64_t t = rdtsc();
 	    buf[idx] = (val * val) % numOfInt;
-	    cycleSum += rdtsc() - t;
+	    uint64_t t2 = rdtsc();
+	    cycleSum = cycleSum + (t2 - t);
 	    if (buf[idx] < 0)
 		buf[idx] = 0;
 	    

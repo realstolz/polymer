@@ -152,6 +152,10 @@ void partitionByDegree(wghGraph<vertex> GA, int numOfShards, int *sizeArr, int s
 	    tmpSizeCounter = 0;
 	}
     }
+
+    for (int i = 0; i < numOfShards; i++) {
+	printf("%d shard: %d\n", i, accum[i]);
+    }
     
     free(degrees);
 }
@@ -183,6 +187,7 @@ void subPartitionByDegree(wghGraph<vertex> GA, int numOfShards, int *sizeArr, in
     for (intT i = 0; i < n; i++) {
 	totalDegree += degrees[i];
     }
+    
 
     int averageDegree = totalDegree / numOfShards;
     int counter = 0;
@@ -197,7 +202,7 @@ void subPartitionByDegree(wghGraph<vertex> GA, int numOfShards, int *sizeArr, in
 	    tmpSizeCounter = 0;
 	}
     }
-    
+
     free(degrees);
 }
 
@@ -256,7 +261,7 @@ void graphHasher(wghGraph<vertex> &GA, Hash_F hash) {
 	    //V[i].setFakeDegree(d);
 	    intE *outEdges = V[i].getOutNeighborPtr();
 	    for (intT j = 0; j < d; j++) {
-		outEdges[2*j] = hash.hashFunc(outEdges[j]);
+		outEdges[2*j] = hash.hashFunc(outEdges[2*j]);
 	    }
 	    newVertexSet[hash.hashFunc(i)] = V[i];	    
 	}
@@ -311,13 +316,13 @@ wghGraph<vertex> graphFilter(wghGraph<vertex> &GA, int rangeLow, int rangeHi, bo
 	offsets[i] = totalSize;
 	totalSize += counters[i];
     }
-
+    //printf("totalSize of %d: %d\n", rangeLow, totalSize);
     numa_free(counters, sizeof(int) * GA.n);
 
     intE *edges = (intE *)numa_alloc_local(sizeof(intE) * totalSize * 2);
 
     {parallel_for (intT i = 0; i < GA.n; i++) {
-	    intE *localEdges = &edges[offsets[i]];
+	    intE *localEdges = &edges[offsets[i]*2];
 	    intT counter = 0;
 	    intT d = (useOutEdge) ? (V[i].getOutDegree()) : (V[i].getInDegree());
 	    for (intT j = 0; j < d; j++) {

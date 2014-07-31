@@ -155,8 +155,8 @@ void *SPMVSubWorker(void *arg) {
 	
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
-
-        edgeMap(GA, All, SPMV_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
+	edgeMapDenseForward(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, true, start, end);
+        //edgeMap(GA, All, SPMV_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
 
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);

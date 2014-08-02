@@ -22,9 +22,13 @@ bool randomAccess = false;
 
 __inline__ __attribute__((always_inline)) uint64_t rdtsc() {
     uint64_t a;
-    __asm__ __volatile__ ("cpuid\n\t"
-			  "rdtsc\n\t"
-			  : "=A" (a));
+    asm volatile ( "cpuid\n\t" 
+		   "rdtsc\n\t"    // Returns the time in EDX:EAX.
+		   "shl $32, %%rdx\n\t"  // Shift the upper bits left.
+		   "or %%rdx, %0"        // 'Or' in the lower bits.
+		   : "=a" (a)
+		   :
+		   : "rdx");
     return a;
 }
 

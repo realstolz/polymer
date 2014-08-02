@@ -995,8 +995,9 @@ void edgeMapSparseV3(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier
 	intT nextEdgesCount = 0;
 	
 	pthread_barrier_wait(subworker.local_barr);
+	printf("hehe\n");
 	intT *nextFrontier = next->s;
-
+	
 	if (startPos < endPos) {
 	    //printf("have ele: %d to %d %d, %p\n", startPos, endPos, subworker.tid, next);	    
 	    int currNodeNum = frontier->getNodeNumOfSparseIndex(startPos);
@@ -1103,7 +1104,6 @@ void edgeMap(wghGraph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT th
 	}
 
 	pthread_barrier_wait(subworker.global_barr);
-	
 	edgeMapSparseV3(GA, V, f, next, part, subworker);
 	next->isDense = false;
     }
@@ -1181,6 +1181,38 @@ void vertexMap(vertices *V, F add, int nodeNum, int subNum, int totalSub) {
     }
 }
 
+template <class F>
+void vertexMap(LocalFrontier *V, F add, int nodeNum, int subNum, int totalSub) {
+    if (V->isDense) {
+	int size = V->endID - V->startID;
+	int offset = V->startID;
+	bool *b = V->b;
+	int subSize = size / totalSub;
+	int startPos = subSize * subNum;
+	int endPos = subSize * (subNum + 1);
+	if (subNum == totalSub - 1) {
+	    endPos = size;
+	}
+	
+	for (int i = startPos; i < endPos; i++) {
+	    if (b[i])
+		add(i + offset);
+	}
+    } else {
+	int size = V->m;
+	intT *s = V->s;
+	int subSize = size / totalSub;
+	int startPos = subSize * subNum;
+	int endPos = subSize * (subNum + 1);
+	if (subNum == totalSub - 1) {
+	    endPos = size;
+	}
+	for (int i = startPos; i < endPos; i++) {
+	    add(s[i]);
+	}
+    }
+}
+
 void clearLocalFrontier(LocalFrontier *next, int nodeNum, int subNum, int totalSub) {
     int size = next->endID - next->startID;
     //int offset = V->getOffset(nodeNum);
@@ -1240,161 +1272,3 @@ void vertexFilter(vertices *V, F filter, int nodeNum, int subNum, int totalSub, 
     //printf("filter over\n");
     writeAdd(&(result->m), m);
 }
-
-//*****WEIGHTED EDGE FUNCTIONS*****
-/*
-template <class F, class vertex>
-  bool* edgeMapDense(wghGraph<vertex> GA, bool* vertices, F f, bool parallel = 0) {
-  intT numVertices = GA.n;
-  vertex *G = GA.V;
-  bool* next = newA(bool,numVertices);
-  {parallel_for (long i=0; i<numVertices; i++){
-    next[i] = 0;
-    if (f.cond(i)) {
-      intT d = G[i].getInDegree();
-      if(!parallel || d < 1000) {
-	for(intT j=0; j<d; j++){
-	  intT ngh = G[i].getInNeighbor(j);
-	  if(vertices[ngh]){
-	    intT edgeLen = G[i].getInWeight(j);
-	    if (vertices[ngh] && f.update(ngh,i,edgeLen)) next[i] = 1;
-	  }
-	  if (!f.cond(i)) break;
-	}
-      }
-      else {
-	{parallel_for(intT j=0; j<d; j++){
-	  intT ngh = G[i].getInNeighbor(j);
-	  if(vertices[ngh]){
-	    intT edgeLen = G[i].getInWeight(j);
-	    if (vertices[ngh] && f.update(ngh,i,edgeLen)) next[i] = 1;
-	  }
-	  }}
-      }
-    }
-    }
-  }
-  return next;
-}
-
-template <class F, class vertex>
-bool* edgeMapDenseForward(wghGraph<vertex> GA, bool* vertices, F f) {
-  intT numVertices = GA.n;
-  vertex *G = GA.V;
-  bool* next = newA(bool,numVertices);
-  {parallel_for(long i=0;i<numVertices;i++) next[i] = 0;}
-  {parallel_for (long i=0; i<numVertices; i++){
-    if (vertices[i]) {
-      intT d = G[i].getOutDegree();
-      if(d < 1000) {
-	for(intT j=0; j<d; j++){
-	  intT ngh = G[i].getOutNeighbor(j);
-	  intT edgeLen = G[i].getOutWeight(j);
-	  if (f.cond(ngh) && f.updateAtomic(i,ngh,edgeLen)) next[ngh] = 1;
-	}
-      }
-      else{
-	parallel_for(intT j=0; j<d; j++){
-	  intT ngh = G[i].getOutNeighbor(j);
-	  intT edgeLen = G[i].getOutWeight(j);
-	  if (f.cond(ngh) && f.updateAtomic(i,ngh,edgeLen)) next[ngh] = 1;
-	}
-      }
-    }
-  }}
-  return next;
-}
-
-template <class F, class vertex>
-  pair<uintT,intT*> edgeMapSparseW(vertex* frontierVertices, intT* indices, 
-				   uintT* degrees, uintT m, F f, 
-				   intT remDups=0, intT* flags=NULL) {
-  uintT* offsets = degrees;
-  uintT outEdgeCount = sequence::plusScan(offsets, degrees, m);
-
-  intT* outEdges = newA(intT,outEdgeCount);
-
-  {parallel_for (long i = 0; i < m; i++) {
-    intT v = indices[i];
-    uintT o = offsets[i];
-    vertex vert = frontierVertices[i];
-    intT d = vert.getOutDegree();
-    if(d < 1000) {
-      for (intT j=0; j < d; j++) {
-	intT ngh = vert.getOutNeighbor(j);
-	intT edgeLen = vert.getOutWeight(j);
-	if (f.cond(ngh) && f.updateAtomic(v,ngh,edgeLen)) 
-	  outEdges[o+j] = ngh;
-	else outEdges[o+j] = -1;
-      }
-    }
-    else {
-      {parallel_for (intT j=0; j < d; j++) {
-	intT ngh = vert.getOutNeighbor(j);
-	intT edgeLen = vert.getOutWeight(j);
-	if (f.cond(ngh) && f.updateAtomic(v,ngh,edgeLen)) 
-	  outEdges[o+j] = ngh;
-	else outEdges[o+j] = -1;
-	
-	}}
-    }
-    }}
-
-  intT* nextIndices = newA(intT, outEdgeCount);
-  if(remDups) remDuplicates(outEdges,flags,outEdgeCount,remDups);
-
-  // Filter out the empty slots (marked with -1)
-  uintT nextM = sequence::filter(outEdges,nextIndices,outEdgeCount,nonNegF());
-  free(outEdges);
-  return pair<uintT,intT*>(nextM, nextIndices);
-}
-
-// decides on sparse or dense base on number of nonzeros in the active vertices
-template <class F, class vertex>
-  vertices edgeMap(wghGraph<vertex> GA, vertices V, F f, intT threshold = -1, char option=DENSE, bool remDups=false) {
-  intT numVertices = GA.n;
-  uintT numEdges = GA.m;
-  if(threshold == -1) threshold = numEdges/20; //default threshold
-  vertex *G = GA.V;
-  intT m = V.numNonzeros();
-  if (numVertices != V.numRows()) {
-    cout << "edgeMap: Sizes Don't match" << endl;
-    abort();
-  }
-
-  // used to generate nonzero indices to get degrees
-  uintT* degrees = newA(uintT, m);
-  vertex* frontierVertices;
-  V.toSparse();
-  frontierVertices = newA(vertex,m);
-
-  {parallel_for (long i=0; i < m; i++){
-    vertex v = G[V.s[i]];
-    degrees[i] = v.getOutDegree();
-    frontierVertices[i] = v;
-    }}
-  uintT outDegrees = sequence::plusReduce(degrees, m);    
-  if (outDegrees == 0) return vertices(numVertices);
-  if (m + outDegrees > threshold) { 
-    V.toDense();
-    free(degrees);
-    free(frontierVertices);
-    bool* R = option == DENSE_FORWARD ? 
-      edgeMapDenseForward(GA,V.d,f) : 
-      edgeMapDense(GA, V.d, f,option);
-    vertices v1 = vertices(numVertices, R);
-    //cout << "size (D) = " << v1.m << endl;
-    return  v1;
-  } else { 
-    pair<uintT,intT*> R = 
-      remDups ? 
-      edgeMapSparseW(frontierVertices, V.s, degrees, V.numNonzeros(), f, 
-		    numVertices, GA.flags) :
-      edgeMapSparseW(frontierVertices, V.s, degrees, V.numNonzeros(), f);
-    //cout << "size (S) = " << R.first << endl;
-    free(degrees);
-    free(frontierVertices);
-    return vertices(numVertices, R.first, R.second);
-  }
-}
-*/

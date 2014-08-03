@@ -995,7 +995,6 @@ void edgeMapSparseV3(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier
 	intT nextEdgesCount = 0;
 	
 	pthread_barrier_wait(subworker.local_barr);
-	printf("hehe\n");
 	intT *nextFrontier = next->s;
 	
 	if (startPos < endPos) {
@@ -1020,23 +1019,13 @@ void edgeMapSparseV3(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier
 			printf("oops\n");
 		    }
 		    currActiveList = frontier->getSparseArr(currNodeNum);
-		    //printf("currList of %d %d: %p\n", subworker.tid, subworker.subTid, currActiveList);
 		}
-		//printf("s: %p %d\n", currActiveList, i-offset);
 		intT idx = currActiveList[i - offset];
-		//printf("vertex on %d %d: %d\n", subworker.tid, subworker.subTid, idx);
 		intT d = V[idx].getFakeDegree();
 		for (intT j = 0; j < d; j++) {
 		    uintT ngh = V[idx].getOutNeighbor(j);
+		    //printf("from %d to %d len %d\n", idx, ngh, V[idx].getOutWeight(j));
 		    if (f.cond(ngh) && f.updateAtomic(idx, ngh, V[idx].getOutWeight(j))) {
-			//add to active list
-			//printf("out edge # %d: %d -> %d of %d %d\n", nextM, idx, ngh, subworker.tid, subworker.subTid);
-			/*
-			if (nextM >= bufferLen) {
-			    printf("oops: %d %d\n", subworker.tid, subworker.subTid);
-			}
-			*/
-			//printf("I am here\n");
 			int tmp = __sync_fetch_and_add(mPtr, 1);
 			if (tmp >= bufferLen)
 			    printf("oops\n");

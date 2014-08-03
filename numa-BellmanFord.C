@@ -107,6 +107,7 @@ struct BF_subworker_arg {
     int **ShortestPathLen_ptr;
     int **Visited_ptr;
     pthread_barrier_t *node_barr;
+    pthread_barrier_t *node_barr2;
     LocalFrontier *localFrontier;
 };
 
@@ -138,6 +139,7 @@ void *BFSubWorker(void *arg) {
     subworker.dense_start = start;
     subworker.dense_end = end;
     subworker.global_barr = &global_barr;
+    subworker.local_barr = my_arg->node_barr2;
 
     pthread_barrier_wait(local_barr);
     if (subworker.isSubMaster()) {
@@ -148,7 +150,7 @@ void *BFSubWorker(void *arg) {
 	currIter++;
 	if (tid + subTid == 0) {
 	    numVisited += Frontier->numNonzeros();
-	    printf("num of non zeros: %d\n", Frontier->numNonzeros());
+	    printf("Round %d: num of non zeros: %d\n", currIter, Frontier->numNonzeros());
 	}
 
 	if (subTid == 0) {
@@ -156,7 +158,7 @@ void *BFSubWorker(void *arg) {
 	}
 	pthread_barrier_wait(&global_barr);
 	//apply edgemap
-	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.n/10, DENSE_FORWARD, false, true, subworker);
 	pthread_barrier_wait(&global_barr);
         vertexMap(Frontier, BF_Vertex_F(Visited), tid, subTid, CORES_PER_NODE);
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
@@ -274,6 +276,7 @@ void *BFThread(void *arg) {
     if (my_arg->start >= rangeLow && my_arg->start < rangeHi) {
 	current->m = 1;
 	current->outEdgesCount = GA.V[my_arg->start].getOutDegree();
+	ShortestPathLen[my_arg->start] = 0;
     } else {
 	current->m = 0;
 	current->outEdgesCount = 0;
@@ -281,6 +284,9 @@ void *BFThread(void *arg) {
 
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
+
+    pthread_barrier_t localBarr2;
+    pthread_barrier_init(&localBarr2, NULL, CORES_PER_NODE);
 
     int startPos = 0;
 
@@ -296,6 +302,7 @@ void *BFThread(void *arg) {
 	arg->ShortestPathLen_ptr = &ShortestPathLen;
 	arg->Visited_ptr = &Visited;
 	arg->node_barr = &localBarr;
+	arg->node_barr2 = &localBarr2;
 	arg->localFrontier = output;
 	
 	arg->startPos = startPos;
@@ -341,9 +348,9 @@ struct BF_Hash_F {
 
 template <class vertex>
 void BF_main(wghGraph<vertex> &GA, intT start) {
-    numOfNode = 1;//numa_num_configured_nodes();
+    numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
-    CORES_PER_NODE = 1;//numa_num_configured_cpus() / numOfNode;
+    CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);

@@ -234,7 +234,7 @@ void *PageRankThread(void *arg) {
 
     int sizeOfShards[CORES_PER_NODE];
 
-    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, false);
+    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, true);
     
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);

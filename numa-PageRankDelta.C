@@ -150,6 +150,7 @@ struct PR_subworker_arg {
     double damping;
     double epsilon2;
     pthread_barrier_t *node_barr;
+    pthread_barrier_t *node_barr2;
     LocalFrontier *localFrontier;
     LocalFrontier *dummyFrontier;
 };
@@ -185,8 +186,10 @@ void *PageRankSubWorker(void *arg) {
     subworker.dense_start = start;
     subworker.dense_end = end;
     subworker.global_barr = &global_barr;
+    subworker.local_barr = my_arg->node_barr2;
 
     pthread_barrier_wait(local_barr);
+    intT threshold = 0;
     while(1) {
 	if (maxIter > 0 && currIter >= maxIter)
             break;
@@ -198,7 +201,7 @@ void *PageRankSubWorker(void *arg) {
 
 	pthread_barrier_wait(local_barr);
 
-	edgeMap(GA, Frontier, PR_F<vertex>(GA.V,delta,nghSum), dummy, 0, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, PR_F<vertex>(GA.V,delta,nghSum), dummy, threshold, DENSE_FORWARD, false, true, subworker);
 
 	pthread_barrier_wait(local_barr);
 	pthread_barrier_wait(local_barr);
@@ -316,9 +319,12 @@ void *PageRankThread(void *arg) {
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
+    pthread_barrier_t localBarr2;
+    pthread_barrier_init(&localBarr2, NULL, CORES_PER_NODE);
+
     int sizeOfShards[CORES_PER_NODE];
 
-    partitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(double), true);
+    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, true);
 
     int startPos = 0;
 
@@ -338,6 +344,7 @@ void *PageRankThread(void *arg) {
 	arg->damping = damping;
 	arg->epsilon2 = epsilon2;
 	arg->node_barr = &localBarr;
+	arg->node_barr2 = &localBarr2;
 	arg->localFrontier = output;
 	arg->dummyFrontier = dummy;
 	

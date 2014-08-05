@@ -983,6 +983,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
     pthread_barrier_wait(subworker.local_barr);
 
     AsyncChunk **localQueue = frontier->frontiers[tid]->localQueue;
+    AsyncChunk **nextQueue = frontier->frontiers[(tid + 1) % frontier->numOfNodes]->localQueue;
 
     volatile intT *localHead = &(frontier->frontiers[tid]->head);
     volatile intT *localTail = &(frontier->frontiers[tid]->tail);
@@ -992,7 +993,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
     volatile intT *endSignal = &(frontier->asyncEndSignal);
     volatile intT *signals[frontier->numOfNodes];
     for (int i = 0; i < frontier->numOfNodes; i++) {
-	signals[i] = &(frontier->frontiers[tid]->emptySignal);
+	signals[i] = &(frontier->frontiers[i]->emptySignal);
     }
     *localHead = 0;
     *insertTail = *nextTail;
@@ -1045,15 +1046,16 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 		    intT ngh = V[idx].getOutNeighbor(j);
 		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
 			//add ngh into chunk
-			int counter = __sync_fetch_and_add(&(bitVec[ngh - offset]), false, true);
+			int counter = __sync_fetch_and_add(&(bitVec[ngh - offset]), 1);
 			if (counter == 0) {
 			    myChunk->s[myChunk->m] = ngh;
 			    myChunk->m += 1;
 			    if (myChunk->m >= BLOCK_SIZE) {
 				//if full, send it
+				//printf("%d send to %d\n", tid, (tid + 1) % frontier->numOfNodes);
 				intT insertPos = __sync_fetch_and_add(insertTail, 1);
-				frontier->asyncQueue[insertPos % GA.n] = myChunk;
-				while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {				
+				nextQueue[insertPos % GA.n] = myChunk;
+				while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {
 				    if (*nextTail > insertPos) {
 					break;
 					printf("pending on insert %d %d %d\n", *nextTail, insertPos, *insertTail);
@@ -1070,7 +1072,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 	    oldCounter++;
 	    
 	    if (oldCounter >= frontier->numOfNodes) {
-		frontier->asyncQueue[currHead % GA.n] = NULL;
+		localQueue[currHead % GA.n] = NULL;
 		for (int i = 0; i < chunkSize; i++) {
 		    intT idx = currChunk->s[i];
 		    if (bitVec[idx - offset] <= 1) {
@@ -1082,7 +1084,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 			if (myChunk->m >= BLOCK_SIZE) {
 			    //if full, send it
 			    intT insertPos = __sync_fetch_and_add(insertTail, 1);
-			    frontier->asyncQueue[insertPos % GA.n] = myChunk;
+			    nextQueue[insertPos % GA.n] = myChunk;
 			    while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {				
 				if (*nextTail > insertPos) {
 				    break;
@@ -1095,13 +1097,23 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 		}
 		free(currChunk);		
 	    } else {
+		//forward the chunk to next
+		//printf("forward chunk from %d to %d\n", tid, (tid + 1) % frontier->numOfNodes);
+		intT insertPos = __sync_fetch_and_add(insertTail, 1);
+		nextQueue[insertPos % GA.n] = currChunk;
+		while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {				
+		    if (*nextTail > insertPos) {
+			break;
+			printf("pending on insert %d %d %d\n", *nextTail, insertPos, *insertTail);
+		    }				
+		}
 	    }
 	} else {
 	    //first send out what is left
 	    if (myChunk->m > 0) {
 		//if full, send it
 		intT insertPos = __sync_fetch_and_add(insertTail, 1);
-		frontier->asyncQueue[insertPos % GA.n] = myChunk;
+		nextQueue[insertPos % GA.n] = myChunk;
 		while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {				
 		    if (*nextTail > insertPos) {
 			break;
@@ -1109,7 +1121,12 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 		    }
 		    
 		}
+		//printf("%d send leftover %p to %d at %d\n", tid, myChunk, (tid + 1) % frontier->numOfNodes, insertPos);
 		myChunk = newChunk(BLOCK_SIZE);
+	    }
+	    
+	    if (*endSignal == 1) {
+		shouldFinish = true;
 	    }
 
 	    //end game protocol
@@ -1126,10 +1143,10 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 			marker = 0;
 		    }
 		    *(signals[i]) = 1;
-		    if (marker > frontier->numOfNodes) {
-			*endSignal = 1;
-			printf("master out\n");
-			shouldFinish = true;
+		    if (marker > 3 * frontier->numOfNodes) {
+			//*endSignal = 1;
+			//printf("master out\n");
+			//shouldFinish = true;
 			break;
 		    }
 		}

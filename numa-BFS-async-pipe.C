@@ -261,7 +261,7 @@ void *BFSWorker(void *arg) {
     current->tail = 1;
     */
     
-    current->localQueue = (AsyncChunk **)malloc(sizeof(AsyncChunk *) * GA.n / numOfNode);
+    current->localQueue = (AsyncChunk **)malloc(sizeof(AsyncChunk *) * GA.n);
     current->head = 0;
     if (my_arg->start >= rangeLow && my_arg->start < rangeHi) {
 	AsyncChunk *firstChunk = newChunk(64);
@@ -270,6 +270,10 @@ void *BFSWorker(void *arg) {
 	current->localQueue[0] = firstChunk;
 	current->insertTail = 1;
 	current->tail = 1;
+	printf("start vert %d from %d, %p\n", my_arg->start, tid, current->localQueue);
+    } else {
+	current->insertTail = 0;
+	current->tail = 0;
     }
 
     pthread_barrier_wait(&timerBarr);
@@ -332,7 +336,7 @@ template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
     numOfNode = 8;//numa_num_configured_nodes();
     int numOfCpu = numa_num_configured_cpus();
-    CORES_PER_NODE = 6;//numOfCpu / numOfNode;
+    CORES_PER_NODE = 1;//numOfCpu / numOfNode;
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);

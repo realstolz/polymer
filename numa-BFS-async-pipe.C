@@ -372,9 +372,12 @@ void BFS(intT start, graph<vertex> &GA) {
     }
     nextTime("BFS");
     if (needResult) {
+	int counter = 0;
 	for (intT i = 0; i < GA.n; i++) {
-	    cout << i << "\t" << std::scientific << std::setprecision(9) << parents_global[hasher.hashFunc(i)] << "\n";
+	    if (parents_global[i] != -1)
+		counter++;
 	}
+	printf("Vertex visited: %d\n", counter);
     }
 }
 

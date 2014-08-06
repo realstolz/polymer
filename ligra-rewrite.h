@@ -1019,7 +1019,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
     int accumSize = 0;
     AsyncChunk *myChunk = newChunk(BLOCK_SIZE);
     bool shouldFinish = false;
-    
+    *localSignal = 0;
     while (!shouldFinish) {
 	volatile intT currHead = 0;
 	volatile intT currTail = 0;
@@ -1038,36 +1038,64 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 
 	    currChunk = localQueue[currHead % GA.n];
 	    int chunkSize = currChunk->m;
-	    for (intT i = 0; i < chunkSize; i++) {
-		accumSize++;
-		intT idx = currChunk->s[i];
-		intT d = V[idx].getOutDegree();
-		for (intT j = 0; j < d; j++) {
-		    intT ngh = V[idx].getOutNeighbor(j);
-		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
-			//add ngh into chunk
-			int counter = __sync_fetch_and_add(&(bitVec[ngh - offset]), 1);
-			if (counter == 0) {
-			    myChunk->s[myChunk->m] = ngh;
-			    myChunk->m += 1;
-			    if (myChunk->m >= BLOCK_SIZE) {
-				//if full, send it
-				//printf("%d send to %d\n", tid, (tid + 1) % frontier->numOfNodes);
-				intT insertPos = __sync_fetch_and_add(insertTail, 1);
-				nextQueue[insertPos % GA.n] = myChunk;
-				while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {
-				    if (*nextTail > insertPos) {
-					break;
-					printf("pending on insert %d %d %d\n", *nextTail, insertPos, *insertTail);
+	    if (chunkSize > 0) {
+		for (intT i = 0; i < chunkSize; i++) {
+		    accumSize++;
+		    intT idx = currChunk->s[i];
+		    intT d = V[idx].getOutDegree();
+		    for (intT j = 0; j < d; j++) {
+			intT ngh = V[idx].getOutNeighbor(j);
+			if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
+			    //add ngh into chunk
+			    int counter = __sync_fetch_and_add(&(bitVec[ngh - offset]), 1);
+			    if (counter == 0) {
+				myChunk->s[myChunk->m] = ngh;
+				myChunk->m += 1;
+				if (myChunk->m >= BLOCK_SIZE) {
+				    //if full, send it
+				    //printf("%d send to %d\n", tid, (tid + 1) % frontier->numOfNodes);
+				    intT insertPos = __sync_fetch_and_add(insertTail, 1);
+				    nextQueue[insertPos % GA.n] = myChunk;
+				    while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {
+					if (*nextTail > insertPos) {
+					    break;
+					    printf("pending on insert %d %d %d\n", *nextTail, insertPos, *insertTail);
+					}				    
 				    }
-				    
+				    myChunk = newChunk(BLOCK_SIZE);
 				}
-				myChunk = newChunk(BLOCK_SIZE);
 			    }
 			}
 		    }
 		}
+	    } else {
+		if (chunkSize < 0) {
+		    // end game message.
+		    if (currChunk->accessCounter >= 2 * frontier->numOfNodes && subworker.isMaster()) {
+			*endSignal = 1;
+			printf("master out\n");
+			shouldFinish = true;
+			continue;
+		    }
+		
+		    if (*localHead >= *localTail && myChunk->m <= 0) {
+			//forward this to the next node
+			intT insertPos = __sync_fetch_and_add(insertTail, 1);
+			nextQueue[insertPos % GA.n] = currChunk;
+			currChunk->accessCounter++;
+			while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {
+			    if (*nextTail > insertPos) {
+				break;
+				printf("pending on insert %d %d %d\n", *nextTail, insertPos, *insertTail);
+			    }			
+			}
+		    } else {
+			free(currChunk);
+		    }
+		    continue;
+		}
 	    }
+
 	    int oldCounter = __sync_fetch_and_add(&(currChunk->accessCounter), 1);
 	    oldCounter++;
 	    
@@ -1131,6 +1159,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 
 	    //end game protocol
 	    if (subworker.isMaster()) {
+		/*
 		*localSignal = 1;
 		int i = 0;
 		int marker = 1;
@@ -1144,12 +1173,35 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 		    }
 		    *(signals[i]) = 1;
 		    if (marker > 3 * frontier->numOfNodes) {
-			//*endSignal = 1;
+			*endSignal = 1;
 			//printf("master out\n");
-			//shouldFinish = true;
+			shouldFinish = true;
 			break;
 		    }
 		}
+		*/
+
+		// create end game chunk and send it.
+		AsyncChunk *endGameChunk = (AsyncChunk *)malloc(sizeof(AsyncChunk));
+		endGameChunk->accessCounter = 1;
+		endGameChunk->m = -1; //magic number for end game chunk.
+		intT insertPos = __sync_fetch_and_add(insertTail, 1);
+		nextQueue[insertPos % GA.n] = endGameChunk;
+		while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {				
+		    if (*nextTail > insertPos) {
+			break;
+			printf("pending on insert %d %d %d\n", *nextTail, insertPos, *insertTail);
+		    }				
+		}
+	    } else {
+		bool firstRound = true;
+		while (*localHead >= *localTail && *endSignal != 1) {
+		    if (firstRound){
+			*localSignal = 1;
+			firstRound = false;
+		    }
+		}
+		localSignal = 0;
 	    }
 	}
     }

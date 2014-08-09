@@ -172,7 +172,7 @@ void *PageRankSubWorker(void *arg) {
 	if (subTid == 0)
 	    Frontier->calculateNumOfNonZero(tid);
 	if (subTid == 0) {
-	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	
 	pthread_barrier_wait(&global_barr);

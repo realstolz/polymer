@@ -384,11 +384,14 @@ struct LocalFrontier {
     int endID;
     bool *b;
     intT *s;
+    intT sparseCounter;
+    intT **sparseChunks;
+    intT *chunkSizes;
     intT *tmp;
     AsyncChunk **localQueue;
     bool isDense;
     
-    LocalFrontier(bool *_b, int start, int end):b(_b), startID(start), endID(end), n(end - start), m(0), isDense(true), s(NULL), outEdgesCount(0){}
+    LocalFrontier(bool *_b, int start, int end):b(_b), startID(start), endID(end), n(end - start), m(0), isDense(true), s(NULL), outEdgesCount(0), sparseChunks(NULL), chunkSizes(NULL){}
     
     bool inRange(int index) { return (startID <= index && index < endID);}
     inline void setBit(int index, bool val) { b[index-startID] = val;}
@@ -415,6 +418,19 @@ struct LocalFrontier {
 	if (!isDense) {
 	    {parallel_for(intT i=0;i<n;i++) b[i] = false;}
 	    {parallel_for(intT i=0;i<m;i++) b[s[i] - startID] = true;}
+	}
+	//printf("hehe\n");
+	isDense = true;
+    }
+    
+    void toDenseWithMerge(int numOfSub) {
+	if (!isDense) {
+	    {parallel_for(intT i=0;i<n;i++) b[i] = false;}
+	    for (int i = 0; i < numOfSub; i++) {
+		intT *sparsePtr = sparseChunks[i];
+		intT size = chunkSizes[i];
+		{parallel_for(intT j=0;j<size;j++) b[sparsePtr[j] - startID] = true;}
+	    }
 	}
 	//printf("hehe\n");
 	isDense = true;
@@ -456,6 +472,7 @@ struct vertices {
     bool** d;
     LocalFrontier **frontiers;
     bool isDense;
+    bool firstSparse;
     AsyncChunk **asyncQueue;
     int asyncEndSignal;
     intT readerTail;
@@ -470,6 +487,7 @@ struct vertices {
 	numOfNonZero = (int *)malloc(numOfNodes * sizeof(int));
 	numOfVertices = 0;
 	m = -1;
+	firstSparse = false;
     }
     /*
     void registerArr(int nodeNum, bool *arr, int size) {
@@ -494,11 +512,25 @@ struct vertices {
 	}
     }
 
-    void toSparse() {
-	if (!isDense)
+    void toDenseWithMerge(int numOfSub) {
+	if (isDense)
 	    return;
 	else
+	    isDense = true;
+	for (int i = 0; i< numOfNodes; i++) {
+	    //printf("todense %d start m = %d n = %d\n", i, frontiers[i]->s[frontiers[i]->m - 1], frontiers[i]->n);
+	    frontiers[i]->toDenseWithMerge(numOfSub);
+	}
+    }
+
+    void toSparse() {
+	if (!isDense) {
+	    firstSparse = false;
+	    return;
+	} else {
 	    isDense = false;
+	    firstSparse = true;
+	}
 	for (int i = 0; i< numOfNodes; i++) {
 	    if (frontiers[i]->isDense) {
 		//printf("real convert\n");
@@ -991,6 +1023,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
     volatile intT *insertTail = &(frontier->frontiers[(tid + 1) % frontier->numOfNodes]->insertTail);
     volatile intT *localSignal = &(frontier->frontiers[tid]->emptySignal);
     volatile intT *endSignal = &(frontier->asyncEndSignal);
+    volatile intT *endGameOnFly = &(frontier->readerTail);
     volatile intT *signals[frontier->numOfNodes];
     for (int i = 0; i < frontier->numOfNodes; i++) {
 	signals[i] = &(frontier->frontiers[i]->emptySignal);
@@ -999,6 +1032,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
     *insertTail = *nextTail;
     *localSignal = 0;
     *endSignal = 0;
+    *endGameOnFly = 0;
 
     int offset = frontier->getOffset(tid);
     int *bitVec = frontier->frontiers[tid]->tmp;
@@ -1091,6 +1125,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 			}
 		    } else {
 			free(currChunk);
+			*endGameOnFly = 0;
 		    }
 		    continue;
 		}
@@ -1182,16 +1217,19 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 		*/
 
 		// create end game chunk and send it.
-		AsyncChunk *endGameChunk = (AsyncChunk *)malloc(sizeof(AsyncChunk));
-		endGameChunk->accessCounter = 1;
-		endGameChunk->m = -1; //magic number for end game chunk.
-		intT insertPos = __sync_fetch_and_add(insertTail, 1);
-		nextQueue[insertPos % GA.n] = endGameChunk;
-		while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {				
-		    if (*nextTail > insertPos) {
-			break;
-			printf("pending on insert %d %d %d\n", *nextTail, insertPos, *insertTail);
-		    }				
+		if (*endGameOnFly == 0) {
+		    AsyncChunk *endGameChunk = (AsyncChunk *)malloc(sizeof(AsyncChunk));
+		    endGameChunk->accessCounter = 1;
+		    endGameChunk->m = -1; //magic number for end game chunk.
+		    intT insertPos = __sync_fetch_and_add(insertTail, 1);
+		    nextQueue[insertPos % GA.n] = endGameChunk;
+		    *endGameOnFly = 1;
+		    while (!__sync_bool_compare_and_swap((intT *)nextTail, insertPos, insertPos+1)) {				
+			if (*nextTail > insertPos) {
+			    break;
+			    printf("pending on insert %d %d %d\n", *nextTail, insertPos, *insertTail);
+			}				
+		    }
 		}
 	    } else {
 		bool firstRound = true;
@@ -1201,9 +1239,161 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 			firstRound = false;
 		    }
 		}
-		localSignal = 0;
+		*localSignal = 0;
 	    }
 	}
+    }
+}
+
+template <class F, class vertex>
+void edgeMapSparseV5(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = NULL) {
+    vertex *V = GA.V;
+    intT currM = frontier->numNonzeros();
+    int startPos = 0;//subworker.getStartPos(currM);
+    int endPos = currM;//subworker.getEndPos(currM);
+    if (!subworker.isSubMaster()) {
+	startPos = 1;
+	endPos = 0;
+    }
+
+    if (startPos < endPos) {
+	next->m = 0;
+	next->outEdgesCount = 0;
+	int bufferLen = frontier->getEdgeStat();
+	if (subworker.isSubMaster()) {
+	    next->s = (intT *)malloc(sizeof(intT) * bufferLen);
+	}
+	intT nextEdgesCount = 0;
+	
+	//pthread_barrier_wait(subworker.local_barr);
+	intT *nextFrontier = next->s;
+	int tmp = 0;
+	int currNodeNum = frontier->getNodeNumOfSparseIndex(startPos);
+	int offset = 0;
+	for (int i = 0; i < currNodeNum; i++) {
+	    offset += frontier->getSparseSize(i);
+	}
+	intT *currActiveList = frontier->getSparseArr(currNodeNum);
+	int lengthOfCurr = frontier->getSparseSize(currNodeNum) - (startPos - offset);
+	for (int i = startPos; i < endPos; i++) {
+	    if (lengthOfCurr <= 0) {
+		while (currNodeNum + 1 < frontier->numOfNodes && lengthOfCurr <= 0) {
+		    offset += frontier->getSparseSize(currNodeNum);
+		    currNodeNum++;
+		    lengthOfCurr = frontier->getSparseSize(currNodeNum);
+		}
+		if (currNodeNum >= frontier->numOfNodes || lengthOfCurr <= 0) {
+		    printf("oops\n");
+		}
+		currActiveList = frontier->getSparseArr(currNodeNum);
+	    }
+	    intT idx = currActiveList[i - offset];
+	    intT d = V[idx].getFakeDegree();
+	    for (intT j = 0; j < d; j++) {
+		uintT ngh = V[idx].getOutNeighbor(j);
+		if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {		    
+		    next->s[tmp] = ngh;
+		    tmp++;
+		    nextEdgesCount += V[ngh].getOutDegree();
+		}
+	    }
+	    lengthOfCurr--;
+	}
+	next->m = tmp;
+	next->outEdgesCount = nextEdgesCount;
+    }
+    //pthread_barrier_wait(subworker.local_barr);
+}
+
+template <class F, class vertex>
+void edgeMapSparseV4(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool firstTime = false, Subworker_Partitioner &subworker = NULL) {
+    // in V4, all thread has its own chunk.
+    vertex *V = GA.V;
+    
+    intT nextM = 0;
+    intT *nextChunk = (intT *)malloc(sizeof(intT) * next->n);
+    intT nextEdgesCount = 0;
+    if (firstTime) {
+	intT currM = frontier->numNonzeros();
+	int startPos = subworker.getStartPos(currM);
+	int endPos = subworker.getEndPos(currM);
+
+	next->outEdgesCount = 0;
+	int bufferLen = frontier->getEdgeStat();
+	
+	pthread_barrier_wait(subworker.local_barr);
+
+	if (startPos < endPos) {
+	    int currNodeNum = frontier->getNodeNumOfSparseIndex(startPos);
+	    int offset = 0;
+	    for (int i = 0; i < currNodeNum; i++) {
+		offset += frontier->getSparseSize(i);
+	    }
+	    intT *currActiveList = frontier->getSparseArr(currNodeNum);
+	    int lengthOfCurr = frontier->getSparseSize(currNodeNum) - (startPos - offset);
+	    for (int i = startPos; i < endPos; i++) {
+		if (lengthOfCurr <= 0) {
+		    while (currNodeNum + 1 < frontier->numOfNodes && lengthOfCurr <= 0) {
+			offset += frontier->getSparseSize(currNodeNum);
+			currNodeNum++;
+			lengthOfCurr = frontier->getSparseSize(currNodeNum);
+		    }
+		    if (currNodeNum >= frontier->numOfNodes || lengthOfCurr <= 0) {
+			printf("oops\n");
+		    }
+		    currActiveList = frontier->getSparseArr(currNodeNum);
+		}
+		intT idx = currActiveList[i - offset];
+		intT d = V[idx].getFakeDegree();
+		for (intT j = 0; j < d; j++) {
+		    uintT ngh = V[idx].getOutNeighbor(j);
+		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
+			nextChunk[nextM] = ngh;
+			nextM++;
+			nextEdgesCount += V[ngh].getOutDegree();
+		    }
+		}
+		lengthOfCurr--;
+	    }
+	}
+	next->chunkSizes[subworker.subTid] = nextM;
+	next->sparseChunks[subworker.subTid] = nextChunk;
+	__sync_fetch_and_add(&(next->m), nextM);
+	__sync_fetch_and_add(&(next->outEdgesCount), nextEdgesCount);
+	pthread_barrier_wait(subworker.global_barr);
+    } else {
+	intT numOfChunks = subworker.numOfSub * frontier->numOfNodes;
+	next->sparseCounter = 0;
+	next->m = 0;
+	pthread_barrier_wait(subworker.local_barr);
+	
+	intT fetchedChunk = __sync_fetch_and_add(&(next->sparseCounter), 1);
+	while (fetchedChunk < numOfChunks) {
+	    int nodeIdx = fetchedChunk / subworker.numOfSub;
+	    int subIdx = fetchedChunk % subworker.numOfSub;
+	    intT *chunk = frontier->frontiers[nodeIdx]->sparseChunks[subIdx];
+	    //printf("%d %d curr chunk is: %p\n", nodeIdx, subIdx, chunk);
+	    intT chunkSize = frontier->frontiers[nodeIdx]->chunkSizes[subIdx];
+	    for (int i = 0; i < chunkSize; i++) {
+		intT idx = chunk[i];
+		intT d = V[idx].getFakeDegree();
+		for (intT j = 0; j < d; j++) {
+		    uintT ngh = V[idx].getOutNeighbor(j);
+		    if (f.cond(ngh) && f.updateAtomic(idx, ngh)) {
+			nextChunk[nextM] = ngh;
+			nextM++;
+			nextEdgesCount += V[ngh].getOutDegree();
+		    }
+		}
+		__builtin_prefetch(&(chunk[i+2]), 0, 3);
+	    }
+	    fetchedChunk = __sync_fetch_and_add(&(next->sparseCounter), 1);
+	}
+	next->chunkSizes[subworker.subTid] = nextM;
+	next->sparseChunks[subworker.subTid] = nextChunk;
+	__sync_fetch_and_add(&(next->m), nextM);
+	__sync_fetch_and_add(&(next->outEdgesCount), nextEdgesCount);
+	pthread_barrier_wait(subworker.global_barr);
     }
 }
 
@@ -1504,6 +1694,8 @@ void switchFrontier(int nodeNum, vertices *V, LocalFrontier* &next) {
     //V->registerArr(nodeNum, tmp, V->getSize(nodeNum));
 }
 
+void clearLocalFrontier(LocalFrontier *next, int nodeNum, int subNum, int totalSub);
+
 // decides on sparse or dense base on number of nonzeros in the active vertices
 template <class F, class vertex>
 void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
@@ -1511,8 +1703,12 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    
-    intT m = V->numNonzeros();// + V->getEdgeStat();
-    
+    intT m = V->numNonzeros() + V->getEdgeStat();
+    /*
+    if (subworker.isMaster()) {
+	printf("%d %d\n", m, threshold);
+    }
+    */
     /*
     if (subworker.isMaster())
 	printf("%d\n", m);
@@ -1526,6 +1722,8 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	    V->toDense();
 	}
 
+	clearLocalFrontier(next, subworker.tid, subworker.subTid, subworker.numOfSub);
+
 	pthread_barrier_wait(subworker.global_barr);
 	
 	bool* R = (option == DENSE_FORWARD) ? 
@@ -1537,10 +1735,24 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	if (subworker.isMaster()) {
 	    V->toSparse();
 	}
-
+	/*
+	if (subworker.isSubMaster()) {
+	    if (next->sparseChunks == NULL) {
+		next->sparseChunks = (intT **)malloc(sizeof(intT *) * subworker.numOfSub);
+	    }
+	    if (next->chunkSizes == NULL) {
+		next->chunkSizes = (intT *)malloc(sizeof(intT) * subworker.numOfSub);
+	    }
+	}
+	*/
 	pthread_barrier_wait(subworker.global_barr);
+	if (V->firstSparse && subworker.isMaster()) {
+	    printf("my first sparse\n");
+	}
 	
 	edgeMapSparseV3(GA, V, f, next, part, subworker);
+	//edgeMapSparseV4(GA, V, f, next, V->firstSparse, subworker);
+	//edgeMapSparseV5(GA, V, f, next, subworker);
 	next->isDense = false;
     }
 }
@@ -1570,8 +1782,8 @@ void vertexCounter(graph<vertex> GA, LocalFrontier *frontier, int nodeNum, int s
 	    m++;
 	}
     }
-    writeAdd(&(frontier->m), m);
-    writeAdd(&(frontier->outEdgesCount), outEdges);
+    __sync_fetch_and_add(&(frontier->m), m);
+    __sync_fetch_and_add(&(frontier->outEdgesCount), outEdges);
 }
 
 template <class F>

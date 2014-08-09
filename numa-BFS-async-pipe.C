@@ -377,7 +377,7 @@ void BFS(intT start, graph<vertex> &GA) {
 	    if (parents_global[i] != -1)
 		counter++;
 	}
-	printf("Vertex visited: %d\n", counter);
+	printf("Vert visited: %d\n", counter);
     }
 }
 

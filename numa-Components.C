@@ -137,7 +137,7 @@ void *ComponentsSubWorker(void *args) {
 
     pthread_barrier_wait(global_barr);
     
-    intT switchThreshold = GA.n / 10;
+    intT switchThreshold = GA.m/20;
 
     while (!Frontier->isEmpty() || currIter == 0) {
 	currIter++;
@@ -146,7 +146,7 @@ void *ComponentsSubWorker(void *args) {
 	    printf("non zeros: %d\n", Frontier->numNonzeros());
 	}
 	
-	clearLocalFrontier(output, tid, subTid, CORES_PER_NODE);
+	//clearLocalFrontier(output, tid, subTid, CORES_PER_NODE);
 
 	vertexMap(Frontier, CC_Vertex_F(IDs,PrevIDs), tid, subTid, CORES_PER_NODE);
 	pthread_barrier_wait(global_barr);

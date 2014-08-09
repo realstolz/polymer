@@ -312,7 +312,7 @@ vertices edgeMap(graph<vertex> GA, vertices V, F f, intT threshold = -1,
     free(frontierVertices);
     bool* R = (option == DENSE_FORWARD) ? 
       edgeMapDenseForward(GA,V.d,f) : 
-      edgeMapDensePull(GA, V.d, f, option);
+      edgeMapDense(GA, V.d, f, option);
     vertices v1 = vertices(numVertices, R);
     //cout << "size (D) = " << v1.m << endl;
     return  v1;

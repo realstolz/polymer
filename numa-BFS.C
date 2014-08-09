@@ -140,9 +140,6 @@ void *BFSSubWorker(void *arg) {
 	    printf("num of non zeros: %d\n", Frontier->numNonzeros());
 	}
 
-	if (subTid == 0) {
-	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
-	}
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	gettimeofday(&startT, &tz);
@@ -330,9 +327,9 @@ struct PR_Hash_F {
 
 template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
-    numOfNode = 8;//numa_num_configured_nodes();
+    numOfNode = numa_num_configured_nodes();
     int numOfCpu = numa_num_configured_cpus();
-    CORES_PER_NODE = 6;//numOfCpu / numOfNode;
+    CORES_PER_NODE = numOfCpu / numOfNode;
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);
@@ -368,9 +365,12 @@ void BFS(intT start, graph<vertex> &GA) {
     }
     nextTime("BFS");
     if (needResult) {
+	int counter = 0;
 	for (intT i = 0; i < GA.n; i++) {
-	    cout << i << "\t" << std::scientific << std::setprecision(9) << parents_global[hasher.hashFunc(i)] << "\n";
+	    if (parents_global[i] != -1)
+		counter++;
 	}
+	printf("Vert visited: %d\n", counter);
     }
 }
 

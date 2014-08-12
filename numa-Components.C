@@ -29,6 +29,7 @@
 using namespace std;
 
 pthread_barrier_t barr;
+pthread_barrier_t subMasterBarr;
 pthread_barrier_t global_barr;
 pthread_barrier_t timerBarr;
 
@@ -125,10 +126,13 @@ void *ComponentsSubWorker(void *args) {
     subworker.dense_end = end;
     subworker.global_barr = global_barr;
     subworker.local_barr = my_arg->node_barr;
+    subworker.leader_barr = &subMasterBarr;
 
     intT *IDs = IDs_global;
     intT *PrevIDs = PrevIDs_global;
-
+    if (subworker.isMaster()) {
+	pthread_barrier_init(&subMasterBarr, NULL, Frontier->numOfNodes);
+    }
     pthread_barrier_wait(master_barr);
 
     if (subworker.isSubMaster()) {
@@ -137,7 +141,7 @@ void *ComponentsSubWorker(void *args) {
 
     pthread_barrier_wait(global_barr);
     
-    intT switchThreshold = GA.m/20;
+    intT switchThreshold = GA.n/10;
 
     while (!Frontier->isEmpty() || currIter == 0) {
 	currIter++;

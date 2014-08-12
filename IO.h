@@ -74,6 +74,7 @@ _seq<char> readStringFromFile(char *fileName) {
   file.seekg (0, ios::beg);
   long n = end - file.tellg();
   char* bytes = newA(char,n+1);
+  printf("end is: %lu, n is: %lu, bytes is: %p\n", end, n, bytes);
   file.read (bytes,n);
   file.close();
   return _seq<char>(bytes,n);
@@ -186,6 +187,7 @@ template <class vertex>
 wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
   _seq<char> S = readStringFromFile(fname);
   words W = stringToWords(S.A, S.n);
+  printf("convert over\n");
   if (W.Strings[0] != (string) "WeightedAdjacencyGraph") {
     cout << "Bad input file" << endl;
     abort();
@@ -217,7 +219,7 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
     v[i].setOutDegree(l);
     v[i].setOutNeighbors((intE*)(edgesAndWeights+2*o));
     }}
-  
+
   if(!isSymmetric) {
     intT* tOffsets = newA(intT,n);
     {parallel_for(intT i=0;i<n;i++) tOffsets[i] = INT_T_MAX;}
@@ -230,20 +232,19 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
       }
       }}
     free(offsets);
-
     quickSort(temp,m,pairFirstCmp<intPair>());
 
     tOffsets[0] = 0; 
     inEdgesAndWghs[0] = temp[0].second.first;
     inEdgesAndWghs[1] = temp[0].second.second;
-    {parallel_for(intT i=1;i<m;i++) {
+    {parallel_for(long i=1;i<m;i++) {
       inEdgesAndWghs[2*i] = temp[i].second.first; 
       inEdgesAndWghs[2*i+1] = temp[i].second.second;
       if(temp[i].first != temp[i-1].first) {
 	tOffsets[temp[i].first] = i;
       }
       }}
-
+    printf("offset over\n");
     free(temp);
 
     uintT currOffset = m;

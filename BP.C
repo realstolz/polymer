@@ -35,6 +35,13 @@ inline void writeDiv(ET *a, ET b) {
   while (!CAS(a, oldV, newV));
 }
 
+template <class ET>
+inline void writeMult(ET *a, ET b) {
+  volatile ET newV, oldV; 
+  do {oldV = *a; newV = oldV * b;}
+  while (!CAS(a, oldV, newV));
+}
+
 template <class vertex>
 struct BP_F {
     double** m_next;
@@ -57,15 +64,18 @@ template <class vertex>
 struct BP_F_2 {
     double** m_next;
     double** m_curr;
+    double* product;
     vertex* V;
-    BP_F_2(double** _p_curr, double** _p_next, vertex* _V) : 
-	m_curr(_p_curr), m_next(_p_next), V(_V) {}
+    BP_F_2(double** _p_curr, double** _p_next, double* _product, vertex* _V) : 
+	m_curr(_p_curr), m_next(_p_next), product(_product), V(_V) {}
     inline bool update(intT s, intT d){ 
 	(m_next[s])[d] /= (m_curr[d])[s];
 	return 1;
     }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
-	writeDiv(&((m_next[s])[d]), (m_curr[d])[s]);
+	(m_next[s])[d] /= (m_curr[d])[s];
+	//writeDiv(&((m_next[s])[d]), (m_curr[d])[s]);
+	writeMult(&(product[d]), (m_next[s])[d]);
 	return 1;
     }
     inline bool cond (intT d) { return 1; } //does nothing
@@ -77,7 +87,7 @@ struct BP_Vertex_Reset {
     BP_Vertex_Reset(double* _p_curr) :
     p_curr(_p_curr) {}
     inline bool operator () (intT i) {
-	p_curr[i] = 0.0;
+	p_curr[i] = 1.0;
 	return 1;
     }
 };
@@ -151,16 +161,18 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
     double *product = (double *)malloc(sizeof(double) * n);
     printf("start init\n");
     for (intT i = 0; i < n; i++) {
-	m_curr[i] = (double *)malloc(sizeof(double) * n);
-	m_next[i] = (double *)malloc(sizeof(double) * n);
-	{parallel_for (intT j = 0; j < n; j++) {
+	intT d = GA.V[i].getOutDegree();
+	m_curr[i] = (double *)malloc(sizeof(double) * d);
+	m_next[i] = (double *)malloc(sizeof(double) * d);
+	{parallel_for (intT j = 0; j < d; j++) {
 		(m_curr[i])[j] = 0.5;//(rand() % 1000) / 1000.0;
 		(m_next[i])[j] = 0.5;//(rand() % 1000) / 1000.0;
 	    }
 	}
-	product[i] = (rand() % 1000) / 1000.0;
+	product[i] = 0.5;//(rand() % 1000) / 1000.0;
     }
     printf("end init\n");
+    return;
     bool* frontier = newA(bool,n);
   
     double mapTime = 0.0;
@@ -180,7 +192,10 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
 	round++;
 
 	vertices output = edgeMap(GA, Frontier, BP_F<vertex>(product,m_next,GA.V),GA.m/20,DENSE_FORWARD);
-	edgeMap(GA, Frontier, BP_F_2<vertex>(m_curr,m_next,GA.V),GA.m/20,DENSE_FORWARD);
+
+	vertexMap(Frontier,BP_Vertex_Reset(product));
+
+	edgeMap(GA, Frontier, BP_F_2<vertex>(m_curr,m_next,product,GA.V),GA.m/20,DENSE_FORWARD);
 
 	swap(m_curr, m_next);
     }

@@ -39,6 +39,7 @@ vertices *Frontier;
 intT *parents_global;
 
 pthread_barrier_t barr;
+pthread_barrier_t subMasterBarr;
 pthread_barrier_t global_barr;
 pthread_barrier_t timerBarr;
 
@@ -123,6 +124,11 @@ void *BFSSubWorker(void *arg) {
     subworker.dense_end = end;
     subworker.global_barr = global_barr;
     subworker.local_barr = my_arg->node_barr2;
+    subworker.leader_barr = &subMasterBarr;
+
+    if (subworker.isMaster()) {
+	pthread_barrier_init(&subMasterBarr, NULL, Frontier->numOfNodes);
+    }
 
     pthread_barrier_wait(local_barr);
 
@@ -166,7 +172,7 @@ void *BFSSubWorker(void *arg) {
 	if (tid + subTid == 0) {
 	    printf("edge map time: %lf\n", mapTime);
 	}
-	break;
+	//break;
     }
 
     if (tid + subTid == 0) {

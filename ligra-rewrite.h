@@ -78,6 +78,7 @@ struct Subworker_Partitioner {
     int dense_end;
     pthread_barrier_t *global_barr;
     pthread_barrier_t *local_barr;
+    pthread_barrier_t *leader_barr;
     Subworker_Partitioner(int nSub):numOfSub(nSub){}
     
     inline bool isMaster() {return (tid + subTid == 0);}
@@ -413,6 +414,31 @@ struct LocalFrontier {
 	}
 	isDense = false;
     }
+
+    void toSparseAsync(int nextID, LocalFrontier* next) {
+	if (isDense) {
+	    if (s != NULL)
+		free(s);
+	    _seq<intT> R = sequence::packIndex(b, n);
+	    s = R.A;
+	    m = R.n;
+	    {parallel_for (intT i = 0; i < m; i++) s[i] = s[i] + startID;}
+	    if (m == 0) {
+		printf("%p\n", s);
+	    } else {
+		printf("M is %d and first ele is %d\n", m, s[0]);
+	    }
+	    AsyncChunk *myChunk = (AsyncChunk *)malloc(sizeof(AsyncChunk));
+	    myChunk->s = R.A;
+	    myChunk->m = R.n;
+	    myChunk->accessCounter = 0;
+	    next->localQueue[0] = myChunk;
+	    next->insertTail = 1;
+	    next->head = 0;
+	    next->tail = 1;
+	}
+	isDense = false;
+    }
     
     void toDense() {
 	if (!isDense) {
@@ -536,6 +562,23 @@ struct vertices {
 		//printf("real convert\n");
 	    }
 	    frontiers[i]->toSparse();
+	}
+    }
+
+    void toSparseAsync() {
+	if (!isDense) {
+	    firstSparse = false;
+	    return;
+	} else {
+	    isDense = false;
+	    firstSparse = true;
+	}
+	for (int i = 0; i< numOfNodes; i++) {
+	    if (frontiers[i]->isDense) {
+		//printf("real convert\n");
+	    }
+	    int nextID = (i + 1) % numOfNodes;
+	    frontiers[i]->toSparseAsync(nextID, frontiers[nextID]);
 	}
     }
 
@@ -1245,6 +1288,8 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
     }
 }
 
+void switchFrontier(int nodeNum, vertices *V, LocalFrontier* &next);
+
 template <class F, class vertex>
 void edgeMapSparseV5(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = NULL) {
     vertex *V = GA.V;
@@ -1256,7 +1301,10 @@ void edgeMapSparseV5(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	endPos = 0;
     }
 
-    if (startPos < endPos) {
+    int counter = 0;
+
+    while (startPos < endPos) { //only master get in
+	counter++;
 	next->m = 0;
 	next->outEdgesCount = 0;
 	int bufferLen = frontier->getEdgeStat();
@@ -1301,6 +1349,20 @@ void edgeMapSparseV5(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	}
 	next->m = tmp;
 	next->outEdgesCount = nextEdgesCount;
+	pthread_barrier_wait(subworker.leader_barr);
+	switchFrontier(subworker.tid, frontier, next);
+	pthread_barrier_wait(subworker.leader_barr);
+	frontier->calculateNumOfNonZero(subworker.tid);
+	pthread_barrier_wait(subworker.leader_barr);
+	currM = frontier->numNonzeros();
+	startPos = 0;
+	endPos = currM;
+	if (frontier->isEmpty()) {
+	    if (subworker.tid == 0) {
+		printf("Sparse ok: %d\n", counter);
+	    }
+	    break;
+	}
     }
     //pthread_barrier_wait(subworker.local_barr);
 }
@@ -1703,7 +1765,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    
-    intT m = V->numNonzeros() + V->getEdgeStat();
+    intT m = V->numNonzeros();// + V->getEdgeStat();
     /*
     if (subworker.isMaster()) {
 	printf("%d %d\n", m, threshold);
@@ -1750,9 +1812,9 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	    printf("my first sparse\n");
 	}
 	
-	edgeMapSparseV3(GA, V, f, next, part, subworker);
+	//edgeMapSparseV3(GA, V, f, next, part, subworker);
 	//edgeMapSparseV4(GA, V, f, next, V->firstSparse, subworker);
-	//edgeMapSparseV5(GA, V, f, next, subworker);
+	edgeMapSparseV5(GA, V, f, next, subworker);
 	next->isDense = false;
     }
 }

@@ -1261,6 +1261,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 
 		// create end game chunk and send it.
 		if (*endGameOnFly == 0) {
+		    printf("sent end game\n");
 		    AsyncChunk *endGameChunk = (AsyncChunk *)malloc(sizeof(AsyncChunk));
 		    endGameChunk->accessCounter = 1;
 		    endGameChunk->m = -1; //magic number for end game chunk.
@@ -1669,73 +1670,79 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 }
 
 template <class F, class vertex>
-void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, int start = 0, int end = 0) {
+void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker= NULL) {
     vertex *V = GA.V;
-    if (part) {
-	if (start == 0) {
-	    intT totM = frontier->numNonzeros();
-	    intT degreeCount = 0;
-	    intT *degrees = (intT *)malloc(sizeof(intT) * totM);
-	    int hugeOffsets[frontier->numOfNodes];
-	    hugeOffsets[0] = 0;
-	    for (int i = 0 ; i < frontier->numOfNodes-1; i++) {
-		hugeOffsets[i+1] = hugeOffsets[i] + frontier->frontiers[i]->m;
+    intT sparseIter = 0;
+    if (!subworker.isMaster()) {
+	return;
+    }
+
+    //for first time put all frontiers together
+    intT totM = frontier->numNonzeros();
+    intT *sparseQueue = (intT *)malloc(sizeof(intT) * totM);
+    intT frontierOffsets[frontier->numOfNodes];
+    frontierOffsets[0] = 0;
+    for (int i = 0 ; i < frontier->numOfNodes-1; i++) {
+	frontierOffsets[i+1] = frontierOffsets[i] + frontier->frontiers[i]->m;
+    }
+
+    for (int i = 0; i < frontier->numOfNodes; i++) {
+	intT o = frontierOffsets[i];
+	intT *s = frontier->frontiers[i]->s;
+	{parallel_for (intT j = 0; j < frontier->frontiers[i]->m; j++) {
+		sparseQueue[o+j] = s[j];
 	    }
-	    {parallel_for (int i = 0; i < frontier->numOfNodes; i++) {
-		    int o = hugeOffsets[i];
-		    intT m = frontier->frontiers[i]->m;
-		    intT *s = frontier->frontiers[i]->s;
-		    {parallel_for (int j = 0; j < m; j++) {
-			    intT d = V[s[j]].getFakeDegree();
-			    degrees[o+j] = d;
-			    //fetchAndAdd(&degreeCount, d);
-			}}
-		}}
-	    //printf("sparse mode %d: %d\n", next->startID, degreeCount);
-	    intT newM = 0;
-	    intT *offsets = degrees;
-	    degreeCount = sequence::plusScan(offsets, degrees, totM);
-	    if (degreeCount <= 0) {
-		next->setSparse(0, NULL);
-		return;
+	}
+    }
+    
+    while (true) {
+	sparseIter++;
+	intT degreeCount = 0;
+	intT *degrees = (intT *)malloc(sizeof(intT) * totM);
+	{parallel_for (intT i = 0; i < totM; i++) {
+		degrees[i] = V[i].getOutDegree();
+	    }}
+	uintT *offsets = degrees;
+	uintT outEdgeCount = sequence::plusScan(offsets, (uintT *)degrees, (uintT)totM);
+	intT newM = 0;
+	intT *outEdges = (intT *)malloc(sizeof(intT) * outEdgeCount);
+	{parallel_for (intT i = 0; i < totM; i++) {
+		intT v = sparseQueue[i];
+		intT o = offsets[i];
+		vertex vert = V[sparseQueue[i]];
+		intT d = vert.getOutDegree();
+		if (d < 1000) {
+		    for (intT j = 0; j < d; j++) {
+			intT ngh = vert.getOutNeighbor(j);
+			if (f.cond(ngh) && f.updateAtomic(v, ngh))
+			    outEdges[o+j] = ngh;
+			else
+			    outEdges[o+j] = -1;
+		    }
+		} else {
+		    {parallel_for (intT j = 0; j < d; j++) {
+			    intT ngh = vert.getOutNeighbor(j);
+			    if (f.cond(ngh) && f.updateAtomic(v, ngh))
+				outEdges[o+j] = ngh;
+			    else
+				outEdges[o+j] = -1;
+			}
+		    }
+		}
 	    }
-	    intT *outEdges = (intT *)malloc(sizeof(intT) * degreeCount);
-	    
-	    {parallel_for (int i = 0; i < frontier->numOfNodes; i++) {
-		    int o1 = hugeOffsets[i];
-		    intT m = frontier->frontiers[i]->m;
-		    intT *s = frontier->frontiers[i]->s;
-		    {parallel_for (int j = 0; j < m; j++) {
-			    intT o2 = offsets[o1+j];
-			    intT d = V[s[j]].getFakeDegree();
-			    if (d < 1000) {
-				for (int k = 0; k < d; k++) {
-				    uintT ngh = V[s[j]].getOutNeighbor(k);
-				    if (f.cond(ngh) && f.updateAtomic(i, ngh)) {
-					//intT idx = fetchAndAdd(&newM, 1);
-					//newS[idx] = ngh;
-					outEdges[o2+k] = ngh;
-				    } else {
-					outEdges[o2+k] = -1;
-				    }
-				}
-			    } else {
-				{parallel_for (int k = 0; k < d; k++) {
-					uintT ngh = V[s[j]].getOutNeighbor(k);
-					if (f.cond(ngh) && f.updateAtomic(i, ngh)) {
-					    //intT idx = fetchAndAdd(&newM, 1);
-					    //newS[idx] = ngh;
-					    outEdges[o2+k] = ngh;
-					} else {
-					    outEdges[o2+k] = -1;
-					}
-				    }}
-			    }
-			}}
-		}}
-	    intT* nextIndices = (intT *)malloc(sizeof(intT) * degreeCount);
-	    newM = sequence::filter(outEdges, nextIndices, degreeCount, nonNegF());
-	    next->setSparse(newM, nextIndices);
+	}
+	//printf("sparse mode %d: %d\n", next->startID, degreeCount);
+	
+	intT* nextIndices = (intT *)malloc(sizeof(intT) * degreeCount);
+	newM = sequence::filter(outEdges, nextIndices, degreeCount, nonNegF());
+	if (newM <= 0) {
+	    break;
+	} else {
+	    if (sparseQueue != NULL) {
+		free(sparseQueue);
+	    }
+	    sparseQueue = nextIndices;
+	    totM = newM;
 	}
     }
 }
@@ -1778,9 +1785,10 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     int start = subworker.dense_start;
     int end = subworker.dense_end;
 
-    if (m >= threshold) {
-	//Dense part
+    if (m >= threshold) {       
+	//Dense part	
 	if (subworker.isMaster()) {
+	    printf("Dense: %d\n", m);
 	    V->toDense();
 	}
 
@@ -1795,6 +1803,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     } else {
 	//Sparse part
 	if (subworker.isMaster()) {
+	    printf("Sparse: %d\n", m);
 	    V->toSparse();
 	}
 	/*
@@ -1812,9 +1821,9 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	    printf("my first sparse\n");
 	}
 	
-	//edgeMapSparseV3(GA, V, f, next, part, subworker);
+	edgeMapSparseV3(GA, V, f, next, part, subworker);
 	//edgeMapSparseV4(GA, V, f, next, V->firstSparse, subworker);
-	edgeMapSparseV5(GA, V, f, next, subworker);
+	//edgeMapSparseV5(GA, V, f, next, subworker);
 	next->isDense = false;
     }
 }

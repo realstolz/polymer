@@ -263,8 +263,8 @@ void *BFSWorker(void *arg) {
     */
     
     current->head = 0;
+    LocalFrontier *toInsert = Frontier->frontiers[(tid+1) % Frontier->numOfNodes];
     if (my_arg->start >= rangeLow && my_arg->start < rangeHi) {
-	LocalFrontier *toInsert = Frontier->frontiers[(tid+1) % Frontier->numOfNodes];
 	AsyncChunk *firstChunk = newChunk(64);
 	firstChunk->m = 1;
 	firstChunk->s[0] = my_arg->start;
@@ -273,8 +273,8 @@ void *BFSWorker(void *arg) {
 	toInsert->tail = 1;
 	printf("start vert %d from %d, %p\n", my_arg->start, tid, current->localQueue);
     } else {
-	current->insertTail = 0;
-	current->tail = 0;
+	toInsert->insertTail = 0;
+	toInsert->tail = 0;
     }
 
     pthread_barrier_wait(&timerBarr);

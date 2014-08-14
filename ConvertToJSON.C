@@ -37,11 +37,11 @@ void countDegree(graph<vertex> GA, int numOfShards) {
     for (int i = 0; i < n; i++) {
 	if (GA.V[i].getOutDegree() + GA.V[i].getInDegree() <= 0)
 	    continue;
-	printf("%d", i);
+	//printf("%d", i);
 	for (int j = 0; j < GA.V[i].getOutDegree(); j++) {
-	    printf(" %d", GA.V[i].getOutNeighbor(j));
+	    printf("%d\t%d\n", i, GA.V[i].getOutNeighbor(j));
 	}
-	printf("\n");
+	//printf("\n");
     }
 }
 

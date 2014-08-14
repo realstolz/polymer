@@ -143,15 +143,15 @@ void *BFSSubWorker(void *arg) {
 	currIter++;
 	if (tid + subTid == 0) {
 	    numVisited += Frontier->numNonzeros();
-	    printf("num of non zeros: %d\n", Frontier->numNonzeros());
+	    //printf("num of non zeros: %d\n", Frontier->numNonzeros());
 	}
 
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	gettimeofday(&startT, &tz);
-	//edgeMap(GA, Frontier, BFS_F(parents), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
-	//vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
-	edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);
+	edgeMap(GA, Frontier, BFS_F(parents), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
+	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
+	//edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);
 	if (subTid == 0) {
 	    pthread_barrier_wait(global_barr);
 	    switchFrontier(tid, Frontier, output); //set new frontier

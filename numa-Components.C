@@ -102,6 +102,7 @@ template <class vertex>
 void *ComponentsSubWorker(void *args) {
     Default_subworker_arg *my_arg = (Default_subworker_arg *)args;
     graph<vertex> &GA = *(graph<vertex> *)my_arg->GA;
+    graph<vertex> &GA_global = *(graph<vertex> *)my_arg->Global_G;
     const intT n = GA.n;
     int tid = my_arg->tid;
     int subTid = my_arg->subTid;
@@ -145,16 +146,24 @@ void *ComponentsSubWorker(void *args) {
 
     while (!Frontier->isEmpty() || currIter == 0) {
 	currIter++;
+	intT currM = Frontier->numNonzeros();
 	if (subworker.isMaster()) {
-	    numVisited += Frontier->numNonzeros();
-	    printf("non zeros: %d\n", Frontier->numNonzeros());
+	    numVisited += currM;
+	    printf("non zeros: %d\n", currM);
 	}
 	
 	//clearLocalFrontier(output, tid, subTid, CORES_PER_NODE);
 
 	vertexMap(Frontier, CC_Vertex_F(IDs,PrevIDs), tid, subTid, CORES_PER_NODE);
 	pthread_barrier_wait(global_barr);
-	edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_FORWARD, false, true, subworker);
+	if (currM >= switchThreshold) {
+	    edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_FORWARD, false, true, subworker);
+	} else {
+	    //printf("here\n");	    
+	    edgeMapSparse(GA_global, Frontier, CC_F(IDs, PrevIDs), CC_Vertex_F(IDs, PrevIDs), output, subworker);
+	    pthread_barrier_wait(global_barr);
+	    break;
+	}
 	pthread_barrier_wait(global_barr);
 
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
@@ -246,6 +255,7 @@ void *ComponentsWorker(void *args) {
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	Default_subworker_arg *arg = (Default_subworker_arg *)malloc(sizeof(Default_subworker_arg));
 	arg->GA = (void *)(&localGraph);
+	arg->Global_G = (void *)(&GA);
 	arg->tid = tid;
 	arg->subTid = i;
 	arg->rangeLow = rangeLow;

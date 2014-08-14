@@ -254,7 +254,7 @@ void graphHasher(graph<vertex> &GA, Hash_F hash) {
 
     {parallel_for (intT i = 0; i < GA.n; i++) {
 	    intT d = V[i].getOutDegree();
-	    //V[i].setFakeDegree(d);
+	    V[i].setFakeDegree(d);
 	    intE *outEdges = V[i].getOutNeighborPtr();
 	    for (intT j = 0; j < d; j++) {
 		outEdges[j] = hash.hashFunc(outEdges[j]);
@@ -732,6 +732,7 @@ struct Default_worker_arg {
 
 struct Default_subworker_arg {
     void *GA;
+    void *Global_G;
     int maxIter;
     int tid;
     int subTid;
@@ -1669,14 +1670,15 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
     }
 }
 
-template <class F, class vertex>
-void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker= NULL) {
+template <class F, class Vert_F, class vertex>
+void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, Vert_F vf, LocalFrontier *next, Subworker_Partitioner &subworker= NULL) {
     vertex *V = GA.V;
     intT sparseIter = 0;
     if (!subworker.isMaster()) {
 	return;
+    } else {
+	frontier->toSparse();
     }
-
     //for first time put all frontiers together
     intT totM = frontier->numNonzeros();
     intT *sparseQueue = (intT *)malloc(sizeof(intT) * totM);
@@ -1685,7 +1687,6 @@ void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *nex
     for (int i = 0 ; i < frontier->numOfNodes-1; i++) {
 	frontierOffsets[i+1] = frontierOffsets[i] + frontier->frontiers[i]->m;
     }
-
     for (int i = 0; i < frontier->numOfNodes; i++) {
 	intT o = frontierOffsets[i];
 	intT *s = frontier->frontiers[i]->s;
@@ -1694,15 +1695,15 @@ void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *nex
 	    }
 	}
     }
-    
     while (true) {
 	sparseIter++;
-	intT degreeCount = 0;
 	intT *degrees = (intT *)malloc(sizeof(intT) * totM);
 	{parallel_for (intT i = 0; i < totM; i++) {
-		degrees[i] = V[i].getOutDegree();
+		degrees[i] = V[sparseQueue[i]].getOutDegree();
 	    }}
-	uintT *offsets = degrees;
+	printf("sparse: %d\n", totM);
+	//printf("in loop : %d %p\n", frontier->numOfNodes, frontierOffsets);
+	uintT *offsets = (uintT *)degrees;
 	uintT outEdgeCount = sequence::plusScan(offsets, (uintT *)degrees, (uintT)totM);
 	intT newM = 0;
 	intT *outEdges = (intT *)malloc(sizeof(intT) * outEdgeCount);
@@ -1733,9 +1734,10 @@ void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *nex
 	}
 	//printf("sparse mode %d: %d\n", next->startID, degreeCount);
 	
-	intT* nextIndices = (intT *)malloc(sizeof(intT) * degreeCount);
-	newM = sequence::filter(outEdges, nextIndices, degreeCount, nonNegF());
+	intT* nextIndices = (intT *)malloc(sizeof(intT) * outEdgeCount);
+	newM = sequence::filter(outEdges, nextIndices, outEdgeCount, nonNegF());
 	if (newM <= 0) {
+	    printf("sparseIter: %d %d\n", sparseIter, newM);
 	    break;
 	} else {
 	    if (sparseQueue != NULL) {
@@ -1743,6 +1745,9 @@ void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *nex
 	    }
 	    sparseQueue = nextIndices;
 	    totM = newM;
+	    {parallel_for (intT i = 0; i < totM; i++) {
+		    vf(sparseQueue[i]);
+		}}
 	}
     }
 }

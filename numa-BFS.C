@@ -23,6 +23,7 @@
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "ligra-rewrite.h"
 #include "parallel.h"
+#include "custom-barrier.h"
 
 #include <numa.h>
 #include <sys/mman.h>
@@ -42,6 +43,9 @@ pthread_barrier_t barr;
 pthread_barrier_t subMasterBarr;
 pthread_barrier_t global_barr;
 pthread_barrier_t timerBarr;
+
+volatile int global_counter;
+volatile int global_toggle;
 
 int vPerNode = 0;
 int numOfNode = 0;
@@ -70,6 +74,12 @@ struct BFS_F {
     inline bool cond (intT d) { return (Parents[d] == -1); } 
 };
 
+struct BFS_Vert_F {
+    inline bool operator () (intT i) {
+	return 1;
+    }
+};
+
 struct BFS_worker_arg {
     void *GA;
     int tid;
@@ -92,6 +102,8 @@ struct BFS_subworker_arg {
     pthread_barrier_t *node_barr;
     pthread_barrier_t *node_barr2;
     LocalFrontier *localFrontier;
+    volatile int *barr_counter;
+    volatile int *toggle;
 };
 
 template <class vertex>
@@ -117,6 +129,9 @@ void *BFSSubWorker(void *arg) {
 
     intT numVisited = 0;
 
+    Custom_barrier localCustom(my_arg->barr_counter, my_arg->toggle, CORES_PER_NODE);
+    Custom_barrier globalCustom(&global_counter, &global_toggle, Frontier->numOfNodes);
+
     Subworker_Partitioner subworker(CORES_PER_NODE);
     subworker.tid = tid;
     subworker.subTid = subTid;
@@ -125,6 +140,9 @@ void *BFSSubWorker(void *arg) {
     subworker.global_barr = global_barr;
     subworker.local_barr = my_arg->node_barr2;
     subworker.leader_barr = &subMasterBarr;
+    subworker.local_custom = localCustom;
+    subworker.subMaster_custom = globalCustom;
+    
 
     if (subworker.isMaster()) {
 	pthread_barrier_init(&subMasterBarr, NULL, Frontier->numOfNodes);
@@ -149,21 +167,25 @@ void *BFSSubWorker(void *arg) {
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	gettimeofday(&startT, &tz);
-	edgeMap(GA, Frontier, BFS_F(parents), output, GA.n/20, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, BFS_F(parents), output, GA.m/20, DENSE_FORWARD, false, true, subworker);
+	subworker.localWait();
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	//edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);
 	if (subTid == 0) {
-	    pthread_barrier_wait(global_barr);
+	    //pthread_barrier_wait(global_barr);
+	    subworker.globalWait();
 	    switchFrontier(tid, Frontier, output); //set new frontier
 	} else {
 	    output = Frontier->getFrontier(tid);
-	    pthread_barrier_wait(global_barr);
+	    //pthread_barrier_wait(global_barr);
+	    subworker.globalWait();
 	}
 
 	if (subworker.isSubMaster()) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
-	pthread_barrier_wait(global_barr);
+	//pthread_barrier_wait(global_barr);
+	subworker.globalWait();
 	gettimeofday(&endT, &tz);
 	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
 	double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
@@ -200,7 +222,6 @@ void *BFSWorker(void *arg) {
     graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
     
     while (shouldStart == 0);
-    
     const intT n = GA.n;
     int numOfT = my_arg->numOfNode;
     int blockSize = rangeHi - rangeLow;
@@ -275,7 +296,8 @@ void *BFSWorker(void *arg) {
 	Frontier->m = 1;
     }
 
-    pthread_barrier_wait(&timerBarr);
+    volatile int local_counter = 0;
+    volatile int local_toggle = 0;
 
     pthread_t subTids[CORES_PER_NODE];
     for (int i = 0; i < CORES_PER_NODE; i++) {	
@@ -286,6 +308,9 @@ void *BFSWorker(void *arg) {
 	arg->rangeLow = rangeLow;
 	arg->rangeHi = rangeHi;
 	arg->parents_ptr = parents;
+
+	arg->barr_counter = &local_counter;
+	arg->toggle = &local_toggle;
 
 	arg->node_barr = &localBarr;
 	arg->node_barr2 = &localBarr2;
@@ -298,9 +323,22 @@ void *BFSWorker(void *arg) {
         pthread_create(&subTids[i], NULL, BFSSubWorker<vertex>, (void *)arg);
     }
 
+    pthread_barrier_wait(&timerBarr);
+
+    struct timeval timer_start, timer_end;
+    struct timezone timer_zone = {0, 0};
+
+    gettimeofday(&timer_start, &timer_zone);
     pthread_barrier_wait(&localBarr);
     //computation of subworkers
     pthread_barrier_wait(&localBarr);
+    gettimeofday(&timer_end, &timer_zone);
+    double timeStart = ((double)timer_start.tv_sec) + ((double)timer_start.tv_usec) / 1000000.0;
+    double timeEnd = ((double)timer_end.tv_sec) + ((double)timer_end.tv_usec) / 1000000.0;
+    
+    double mapTime = timeEnd - timeStart;
+    if (tid == 0) 
+	printf("self counted time: %lf\n", mapTime);
     
     pthread_barrier_wait(&barr);
     return NULL;
@@ -385,6 +423,8 @@ int parallel_main(int argc, char* argv[]) {
     bool binary = false;
     bool symmetric = false;
     int start = 0;
+    global_counter = 0;
+    global_toggle = 0;
     if(argc > 1) iFile = argv[1];
     if(argc > 2) start = atoi(argv[2]);
     if(argc > 3) if((string) argv[3] == (string) "-result") needResult = true;

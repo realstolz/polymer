@@ -49,6 +49,9 @@ pthread_barrier_t barr;
 pthread_barrier_t global_barr;
 pthread_mutex_t mut;
 
+volatile int global_counter = 0;
+volatile int global_toggle = 0;
+
 vertices *Frontier;
 
 struct BF_F {
@@ -109,6 +112,9 @@ struct BF_subworker_arg {
     pthread_barrier_t *node_barr;
     pthread_barrier_t *node_barr2;
     LocalFrontier *localFrontier;
+
+    volatile int *local_custom_counter;
+    volatile int *local_custom_toggle;
 };
 
 template <class vertex>
@@ -133,6 +139,9 @@ void *BFSubWorker(void *arg) {
 
     intT numVisited = 0;
 
+    Custom_barrier local_custom(my_arg->local_custom_counter, my_arg->local_custom_toggle, CORES_PER_NODE);
+    Custom_barrier global_custom(&global_counter, &global_toggle, Frontier->numOfNodes);
+
     Subworker_Partitioner subworker(CORES_PER_NODE);
     subworker.tid = tid;
     subworker.subTid = subTid;
@@ -140,6 +149,8 @@ void *BFSubWorker(void *arg) {
     subworker.dense_end = end;
     subworker.global_barr = &global_barr;
     subworker.local_barr = my_arg->node_barr2;
+    subworker.local_custom = local_custom;
+    subworker.subMaster_custom = global_custom;
 
     pthread_barrier_wait(local_barr);
     if (subworker.isSubMaster()) {
@@ -154,27 +165,32 @@ void *BFSubWorker(void *arg) {
 	}
 
 	if (subTid == 0) {
-	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
-	pthread_barrier_wait(&global_barr);
+	//pthread_barrier_wait(&global_barr);
+	subworker.globalWait();
 	//apply edgemap
 	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.n/10, DENSE_FORWARD, false, true, subworker);
-	pthread_barrier_wait(&global_barr);
+	//pthread_barrier_wait(&global_barr);
+	subworker.globalWait();
         vertexMap(Frontier, BF_Vertex_F(Visited), tid, subTid, CORES_PER_NODE);
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	//edgeMapSparseAsync(GA, Frontier, BF_F(parents), output, subworker);
 	if (subTid == 0) {
-	    pthread_barrier_wait(&global_barr);
+	    //pthread_barrier_wait(&global_barr);
+	    subworker.globalWait();
 	    switchFrontier(tid, Frontier, output); //set new frontier
 	} else {
 	    output = Frontier->getFrontier(tid);
-	    pthread_barrier_wait(&global_barr);
+	    //pthread_barrier_wait(&global_barr);
+	    subworker.globalWait();
 	}
 
 	if (subworker.isSubMaster()) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
-	pthread_barrier_wait(&global_barr);
+	//pthread_barrier_wait(&global_barr);
+	subworker.globalWait();
     }
 
     if (tid + subTid == 0) {
@@ -291,6 +307,9 @@ void *BFThread(void *arg) {
     int startPos = 0;
 
     pthread_t subTids[CORES_PER_NODE];    
+    
+    volatile int local_counter = 0;
+    volatile int local_toggle = 0;
 
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	BF_subworker_arg *arg = (BF_subworker_arg *)malloc(sizeof(BF_subworker_arg));
@@ -304,6 +323,9 @@ void *BFThread(void *arg) {
 	arg->node_barr = &localBarr;
 	arg->node_barr2 = &localBarr2;
 	arg->localFrontier = output;
+
+	arg->local_custom_counter = &local_counter;
+	arg->local_custom_toggle = &local_toggle;
 	
 	arg->startPos = startPos;
 	arg->endPos = startPos + sizeOfShards[i];

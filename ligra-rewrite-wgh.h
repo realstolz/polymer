@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <sys/mman.h>
 
+#include "custom-barrier.h"
 #include "parallel.h"
 #include "gettime.h"
 #include "utils.h"
@@ -78,12 +79,26 @@ struct Subworker_Partitioner {
     int dense_end;
     pthread_barrier_t *global_barr;
     pthread_barrier_t *local_barr;
+    Custom_barrier local_custom;
+    Custom_barrier subMaster_custom;
+    
     Subworker_Partitioner(int nSub):numOfSub(nSub){}
     
     inline bool isMaster() {return (tid + subTid == 0);}
     inline bool isSubMaster() {return (subTid == 0);}
     inline intT getStartPos(intT m) {return subTid * (m / numOfSub);}
     inline intT getEndPos(intT m) {return (subTid == numOfSub - 1) ? m : ((subTid + 1) * (m / numOfSub));}
+
+    inline void localWait() {
+	local_custom.wait();
+    }
+    inline void globalWait() {
+	local_custom.wait();
+	if (isSubMaster()) {
+	    subMaster_custom.wait();
+	}
+	local_custom.wait();
+    }
 };
 
 struct Default_Hash_F {
@@ -673,6 +688,9 @@ struct Default_subworker_arg {
     pthread_barrier_t *node_barr;
     pthread_barrier_t *master_barr;
     LocalFrontier *localFrontier;
+
+    volatile int *local_custom_counter;
+    volatile int *local_custom_toggle;
 };
 
 struct nonNegF{bool operator() (intT a) {return (a>=0);}};
@@ -994,7 +1012,8 @@ void edgeMapSparseV3(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier
 	    next->s = (intT *)malloc(sizeof(intT) * bufferLen);
 	intT nextEdgesCount = 0;
 	
-	pthread_barrier_wait(subworker.local_barr);
+	//pthread_barrier_wait(subworker.local_barr);
+	subworker.localWait();
 	intT *nextFrontier = next->s;
 	
 	if (startPos < endPos) {
@@ -1038,7 +1057,8 @@ void edgeMapSparseV3(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier
 	    }
 	}
 	__sync_fetch_and_add(&(next->outEdgesCount), nextEdgesCount);
-	pthread_barrier_wait(subworker.local_barr);
+	//pthread_barrier_wait(subworker.local_barr);
+	subworker.localWait();
     }
 }
 
@@ -1057,6 +1077,8 @@ void switchFrontier(int nodeNum, vertices *V, LocalFrontier* &next) {
     next->clearFrontier();
     //V->registerArr(nodeNum, tmp, V->getSize(nodeNum));
 }
+
+void clearLocalFrontier(LocalFrontier *next, int nodeNum, int subNum, int totalSub);
 
 // decides on sparse or dense base on number of nonzeros in the active vertices
 template <class F, class vertex>
@@ -1079,8 +1101,9 @@ void edgeMap(wghGraph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT th
 	if (subworker.isMaster()) {
 	    V->toDense();
 	}
-
-	pthread_barrier_wait(subworker.global_barr);
+	clearLocalFrontier(next, subworker.tid, subworker.subTid, subworker.numOfSub);
+	//pthread_barrier_wait(subworker.global_barr);
+	subworker.globalWait();
 	
 	bool* R = (option == DENSE_FORWARD) ? 
 	    edgeMapDenseForward(GA, V, f, next, part, start, end) : 
@@ -1092,7 +1115,8 @@ void edgeMap(wghGraph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT th
 	    V->toSparse();
 	}
 
-	pthread_barrier_wait(subworker.global_barr);
+	//pthread_barrier_wait(subworker.global_barr);
+	subworker.globalWait();
 	edgeMapSparseV3(GA, V, f, next, part, subworker);
 	next->isDense = false;
     }

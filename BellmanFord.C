@@ -97,19 +97,21 @@ int parallel_main(int argc, char* argv[]) {
   char* iFile;
   bool binary = false;
   bool symmetric = false;
+  intT startPos = 0;
   if(argc > 1) iFile = argv[1];
-  if(argc > 2) if((string) argv[2] == (string) "-s") symmetric = true;
-  if(argc > 3) if((string) argv[3] == (string) "-b") binary = true;
+  if(argc > 2) startPos = atoi(argv[2]);
+  if(argc > 3) if((string) argv[3] == (string) "-s") symmetric = true;
+  if(argc > 4) if((string) argv[4] == (string) "-b") binary = true;
   
   if(symmetric) {
     wghGraph<symmetricWghVertex> WG = 
       readWghGraph<symmetricWghVertex>(iFile,symmetric,binary);
-    BellmanFord((intT)1,WG);
+    BellmanFord((intT)startPos,WG);
     WG.del(); 
   } else {
     wghGraph<asymmetricWghVertex> WG = 
       readWghGraph<asymmetricWghVertex>(iFile,symmetric,binary);
-    BellmanFord((intT)1,WG);
+    BellmanFord((intT)startPos,WG);
     WG.del();
   }
 }

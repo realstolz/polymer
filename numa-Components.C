@@ -35,6 +35,9 @@ pthread_barrier_t timerBarr;
 
 volatile int shouldStart = 0;
 
+volatile int global_counter = 0;
+volatile int global_toggle = 0;
+
 intT *IDs_global = NULL;
 intT *PrevIDs_global = NULL;
 
@@ -66,16 +69,7 @@ struct CC_F {
     inline bool updateAtomic (intT s, intT d) { //atomic Update
 	intT origID = IDs[d];
 	bool res = (writeMin(&IDs[d], IDs[s]) && origID == prevIDs[d]);
-	//printf("update of edge (%d)%d -> %d(%d / %d to %d), %s\n", IDs[s], s, d, origID, prevIDs[d], IDs[d], res ? "YES" : "NO");
 	return res;
-	/*
-	  if (origID != prevIDs[d])
-	  printf("diff ID: %d, %d, %d\n", d, origID, prevIDs[d]);
-	*/
-	/*
-	  return (writeMin(&IDs[d],IDs[s]) 
-	  && origID == prevIDs[d]);
-	*/
     }
     
     inline void vertUpdate(intT v) {
@@ -120,6 +114,9 @@ void *ComponentsSubWorker(void *args) {
 
     intT numVisited = 0;
 
+    Custom_barrier local_custom(my_arg->local_custom_counter, my_arg->local_custom_toggle, CORES_PER_NODE);
+    Custom_barrier global_custom(&global_counter, &global_toggle, Frontier->numOfNodes);
+
     Subworker_Partitioner subworker(CORES_PER_NODE);
     subworker.tid = tid;
     subworker.subTid = subTid;
@@ -128,6 +125,8 @@ void *ComponentsSubWorker(void *args) {
     subworker.global_barr = global_barr;
     subworker.local_barr = my_arg->node_barr;
     subworker.leader_barr = &subMasterBarr;
+    subworker.local_custom = local_custom;
+    subworker.subMaster_custom = global_custom;
 
     intT *IDs = IDs_global;
     intT *PrevIDs = PrevIDs_global;
@@ -155,32 +154,40 @@ void *ComponentsSubWorker(void *args) {
 	//clearLocalFrontier(output, tid, subTid, CORES_PER_NODE);
 
 	vertexMap(Frontier, CC_Vertex_F(IDs,PrevIDs), tid, subTid, CORES_PER_NODE);
-	pthread_barrier_wait(global_barr);
+	//pthread_barrier_wait(global_barr);
+	subworker.globalWait();
+
+	edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_FORWARD, false, true, subworker);
+	/*
 	if (currM >= switchThreshold) {
 	    edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_FORWARD, false, true, subworker);
 	} else {
-	    //printf("here\n");	    
+	    printf("here\n");	    
 	    edgeMapSparse(GA_global, Frontier, CC_F(IDs, PrevIDs), CC_Vertex_F(IDs, PrevIDs), output, subworker);
 	    pthread_barrier_wait(global_barr);
 	    break;
 	}
-	pthread_barrier_wait(global_barr);
-
+	*/
+	//pthread_barrier_wait(global_barr);
+	subworker.localWait();
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 
 	if (subworker.isSubMaster()) {
-	    pthread_barrier_wait(global_barr);
+	    //pthread_barrier_wait(global_barr);
+	    subworker.globalWait();
 	    switchFrontier(tid, Frontier, output); //set new frontier
 	} else {
 	    output = Frontier->getFrontier(tid);
-	    pthread_barrier_wait(global_barr);
+	    //pthread_barrier_wait(global_barr);
+	    subworker.globalWait();
 	}
 
 	if (subworker.isSubMaster()) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
 
-	pthread_barrier_wait(global_barr);
+	//pthread_barrier_wait(global_barr);
+	subworker.globalWait();
 	//swap(IDs, PrevIDs);
 	//break;
     }
@@ -252,6 +259,10 @@ void *ComponentsWorker(void *args) {
 
     int startPos = 0;
     pthread_t subTids[CORES_PER_NODE];
+    
+    volatile int local_counter = 0;
+    volatile int local_toggle = 0;
+
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	Default_subworker_arg *arg = (Default_subworker_arg *)malloc(sizeof(Default_subworker_arg));
 	arg->GA = (void *)(&localGraph);
@@ -265,6 +276,9 @@ void *ComponentsWorker(void *args) {
 	arg->master_barr = &masterBarr;
 	arg->global_barr = &global_barr;
 	arg->localFrontier = output;
+
+	arg->local_custom_counter = &local_counter;
+	arg->local_custom_toggle = &local_toggle;
 	
 	arg->startPos = startPos;
 	arg->endPos = startPos + sizeOfShards[i];

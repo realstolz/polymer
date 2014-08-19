@@ -153,6 +153,8 @@ void *BFSubWorker(void *arg) {
     subworker.subMaster_custom = global_custom;
 
     pthread_barrier_wait(local_barr);
+    if (subworker.isMaster())
+	printf("started\n");
     if (subworker.isSubMaster()) {
 	Frontier->calculateNumOfNonZero(tid);
     }
@@ -370,9 +372,9 @@ struct BF_Hash_F {
 
 template <class vertex>
 void BF_main(wghGraph<vertex> &GA, intT start) {
-    numOfNode = numa_num_configured_nodes();
+    numOfNode = 1;//numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
-    CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
+    CORES_PER_NODE = 10;//numa_num_configured_cpus() / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);

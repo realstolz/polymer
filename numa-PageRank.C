@@ -49,6 +49,9 @@ pthread_barrier_t barr;
 pthread_barrier_t global_barr;
 pthread_mutex_t mut;
 
+volatile int global_counter = 0;
+volatile int global_toggle = 0;
+
 vertices *Frontier;
 
 template <class vertex>
@@ -128,6 +131,8 @@ struct PR_subworker_arg {
     double damping;
     pthread_barrier_t *node_barr;
     LocalFrontier *localFrontier;
+    volatile int *barr_counter;
+    volatile int *toggle;
 };
 
 template <class vertex>
@@ -152,12 +157,17 @@ void *PageRankSubWorker(void *arg) {
     int start = my_arg->startPos;
     int end = my_arg->endPos;
 
+    Custom_barrier globalCustom(&global_counter, &global_toggle, Frontier->numOfNodes);
+    Custom_barrier localCustom(my_arg->barr_counter, my_arg->toggle, CORES_PER_NODE);
+
     Subworker_Partitioner subworker(CORES_PER_NODE);
     subworker.tid = tid;
     subworker.subTid = subTid;
     subworker.dense_start = start;
     subworker.dense_end = end;
     subworker.global_barr = &global_barr;
+    subworker.local_custom = localCustom;
+    subworker.subMaster_custom = globalCustom;
 
     if (subTid == 0) {
 	Frontier->getFrontier(tid)->m = rangeHi - rangeLow;
@@ -309,6 +319,9 @@ void *PageRankThread(void *arg) {
 
     pthread_t subTids[CORES_PER_NODE];    
 
+    volatile int local_custom_counter;
+    volatile int local_toggle;
+
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	PR_subworker_arg *arg = (PR_subworker_arg *)malloc(sizeof(PR_subworker_arg));
 	arg->GA = (void *)(&localGraph);
@@ -322,6 +335,9 @@ void *PageRankThread(void *arg) {
 	arg->damping = damping;
 	arg->node_barr = &localBarr;
 	arg->localFrontier = output;
+
+	arg->barr_counter = &local_custom_counter;
+	arg->toggle = &local_toggle;
 	
 	arg->startPos = startPos;
 	arg->endPos = startPos + sizeOfShards[i];
@@ -396,9 +412,9 @@ struct PR_Hash_F {
 
 template <class vertex>
 void PageRank(graph<vertex> &GA, int maxIter) {
-    numOfNode = 1;//numa_num_configured_nodes();
+    numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
-    CORES_PER_NODE = 10;//numa_num_configured_cpus() / numOfNode;
+    CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);

@@ -143,6 +143,9 @@ void *SPMVSubWorker(void *arg) {
     subworker.global_barr = &global_barr;
 
     pthread_barrier_wait(local_barr);
+    if (subworker.isMaster()) {
+	printf("started\n");
+    }
     pthread_barrier_wait(&global_barr);
     All->m = GA.m;
     while(1) {
@@ -193,13 +196,12 @@ void *SPMVThread(void *arg) {
 
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
-
+    printf("%d before partition\n", tid);
     wghGraph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    printf("%d after partition\n", tid);
 
     int sizeOfShards[CORES_PER_NODE];
-
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, true);
-    
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
     }

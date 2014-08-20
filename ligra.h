@@ -237,6 +237,32 @@ bool* edgeMapDenseForward(graph<vertex> GA, bool* vertices, F f) {
 }
 
 template <class F, class vertex>
+void edgeMapDenseBP(graph<vertex> GA, bool* vertices, F f) {
+  intT numVertices = GA.n;
+  vertex *G = GA.V;
+  bool* next = newA(bool,numVertices);
+  {parallel_for(long i=0;i<numVertices;i++) next[i] = 0;}
+  {parallel_for (long i=0; i<numVertices; i++){
+    if (vertices[i]) {
+      intT d = G[i].getOutDegree();
+      if(d < 1000) {
+	for(intT j=0; j<d; j++){
+	  uintT ngh = G[i].getOutNeighbor(j);
+	  if (f.cond(ngh) && f.updateAtomic(i,ngh,j)) next[ngh] = 1;
+	}
+      }
+      else {
+	{parallel_for(intT j=0; j<d; j++){
+	  uintT ngh = G[i].getOutNeighbor(j);
+	  if (f.cond(ngh) && f.updateAtomic(i,ngh,j)) next[ngh] = 1;
+	  }}
+      }
+    }
+    }}
+  return;
+}
+
+template <class F, class vertex>
 pair<uintT,intT*> edgeMapSparse(vertex* frontierVertices, intT* indices, 
 				uintT* degrees, uintT m, F f, 
 				intT remDups=0, intT* flags=NULL) {

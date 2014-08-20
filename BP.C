@@ -28,6 +28,24 @@ using namespace std;
 
 bool needResult = false;
 
+#define NSTATES 2
+
+struct EdgeWeight {
+    float potential[NSTATES][NSTATES];
+};
+
+struct EdgeData {
+    float belief[NSTATES];
+};
+
+struct VertexInfo {
+    float potential[NSTATES];
+};
+
+struct VertexData {
+    float product[NSTATES];
+};
+
 template <class ET>
 inline void writeDiv(ET *a, ET b) {
   volatile ET newV, oldV; 
@@ -44,54 +62,55 @@ inline void writeMult(ET *a, ET b) {
 
 template <class vertex>
 struct BP_F {
-    double** m_next;
-    double* product;
-    vertex* V;
-    BP_F(double* _product, double** _p_next, vertex* _V) : 
-	product(_product), m_next(_p_next), V(_V) {}
-    inline bool update(intT s, intT d){ 
-	(m_next[s])[d] = product[s];
+    EdgeWeight *edgeW;
+    EdgeData *edgeD_curr;
+    EdgeData *edgeD_next;
+    VertexInfo *vertI;
+    VertexData *vertD_curr;
+    VertexData *vertD_next;
+    intT *offsets;
+    BP_F(EdgeWeight *_edgeW, EdgeData *_edgeD_curr, EdgeData *_edgeD_next, VertexInfo *_vertI, VertexData *_vertD_curr, VertexData *_vertD_next, intT *_offsets) : 
+	edgeW(_edgeW), edgeD_curr(_edgeD_curr), edgeD_next(_edgeD_next), vertI(_vertI), vertD_curr(_vertD_curr), vertD_next(_vertD_next), offsets(_offsets) {}
+    inline bool update(intT s, intT d, intT edgeIdx){
+	intT dstIdx = offsets[s] + edgeIdx;
+	for (int i = 0; i < NSTATES; i++) {
+	    edgeD_next[dstIdx].belief[i] = 0.0;
+	    for (int j = 0; j < NSTATES; j++) {
+		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];
+	    }
+	    vertD_next[d].product[i] = vertD_next[d].product[i] * edgeD_next[dstIdx].belief[i];
+	}
 	return 1;
     }
-    inline bool updateAtomic (intT s, intT d) { //atomic Update
-	(m_next[s])[d] = product[s];
+    inline bool updateAtomic (intT s, intT d, intT edgeIdx) { //atomic Update
+	//printf("we are here: %d\n", s);
+	intT dstIdx = offsets[s] + edgeIdx;
+	//printf("idx: %d\n", dstIdx);
+	for (int i = 0; i < NSTATES; i++) {
+	    edgeD_next[dstIdx].belief[i] = 0.0;
+	    for (int j = 0; j < NSTATES; j++) {
+		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];
+	    }
+	    writeMult(&(vertD_next[d].product[i]), edgeD_next[dstIdx].belief[i]);
+	}
 	return 1;
     }
-    inline bool cond (intT d) { return 1; } //does nothing
-};
-
-template <class vertex>
-struct BP_F_2 {
-    double** m_next;
-    double** m_curr;
-    double* product;
-    vertex* V;
-    BP_F_2(double** _p_curr, double** _p_next, double* _product, vertex* _V) : 
-	m_curr(_p_curr), m_next(_p_next), product(_product), V(_V) {}
-    inline bool update(intT s, intT d){ 
-	(m_next[s])[d] /= (m_curr[d])[s];
-	return 1;
-    }
-    inline bool updateAtomic (intT s, intT d) { //atomic Update
-	(m_next[s])[d] /= (m_curr[d])[s];
-	//writeDiv(&((m_next[s])[d]), (m_curr[d])[s]);
-	writeMult(&(product[d]), (m_next[s])[d]);
-	return 1;
-    }
-    inline bool cond (intT d) { return 1; } //does nothing
+    inline bool cond (intT d) {return 1; } //does nothing
 };
 
 //resets p
 struct BP_Vertex_Reset {
-    double* p_curr;
-    BP_Vertex_Reset(double* _p_curr) :
-    p_curr(_p_curr) {}
+    VertexData *vertD;
+    BP_Vertex_Reset(VertexData *_vertD) :
+	vertD(_vertD) {}
     inline bool operator () (intT i) {
-	p_curr[i] = 1.0;
+	for (int i = 0; i < NSTATES; i++) {
+	    vertD[i].product[i] = 1.0;
+	}
 	return 1;
     }
 };
-
+/*
 template <class vertex>
 graph<vertex> GenLineGraph(graph<vertex> &GA) {
     vertex *newVertexSet = (vertex *)malloc(sizeof(vertex) * GA.m);
@@ -145,6 +164,7 @@ graph<vertex> GenLineGraph(graph<vertex> &GA) {
     }
     return graph<vertex>(newVertexSet, GA.m, totalDeg);
 }
+*/
 
 template <class vertex>
 void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
@@ -154,25 +174,46 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
     const double epsilon = 0.0000001;
     
     srand(time(NULL));
-  
-    double one_over_n = 1/(double)n;
-    double **m_curr = (double **)malloc(sizeof(double *) * n);
-    double **m_next = (double **)malloc(sizeof(double *) * n);
-    double *product = (double *)malloc(sizeof(double) * n);
+
     printf("start init\n");
-    for (intT i = 0; i < n; i++) {
-	intT d = GA.V[i].getOutDegree();
-	m_curr[i] = (double *)malloc(sizeof(double) * d);
-	m_next[i] = (double *)malloc(sizeof(double) * d);
-	{parallel_for (intT j = 0; j < d; j++) {
-		(m_curr[i])[j] = 0.5;//(rand() % 1000) / 1000.0;
-		(m_next[i])[j] = 0.5;//(rand() % 1000) / 1000.0;
+
+    intT *degrees = newA(intT, n);
+    intT *offsets = newA(intT, n);
+
+    {parallel_for (intT i = 0; i < n; i++) degrees[i] = GA.V[i].getOutDegree();}
+
+    offsets[0] = 0;
+    for (intT i = 1; i < n; i++) {
+	offsets[i] = offsets[i-1] + degrees[i-1];
+    }
+
+    printf("%d %d %d\n", n, offsets[n-1] + degrees[n-1], GA.m);
+  
+    EdgeWeight *edgeW = (EdgeWeight *)malloc(sizeof(EdgeWeight) * GA.m);
+    EdgeData *edgeD_curr = (EdgeData *)malloc(sizeof(EdgeData) * GA.m);
+    EdgeData *edgeD_next = (EdgeData *)malloc(sizeof(EdgeData) * GA.m);
+    {parallel_for (intT i = 0; i < GA.m; i++) {
+	    for (int j = 0; j < NSTATES; j++) {
+		for (int k = 0; k < NSTATES; k++) {
+		    edgeW[i].potential[j][k] = rand() % 10000 / 20000.0;
+		}
+		edgeD_curr[i].belief[j] = 0.5;
 	    }
 	}
-	product[i] = 0.5;//(rand() % 1000) / 1000.0;
+    }
+
+    VertexInfo *vertI = (VertexInfo *)malloc(sizeof(VertexInfo) * n);
+    VertexData *vertD_curr = (VertexData *)malloc(sizeof(VertexData) * n);
+    VertexData *vertD_next = (VertexData *)malloc(sizeof(VertexData) * n);
+    {parallel_for (intT i = 0; i < n; i++) {
+	    for (int j = 0; j < NSTATES; j++) {
+		vertI[i].potential[j] = rand() % 10000 / 10000.0;
+		vertD_curr[i].product[j] = 1.0;
+	    }
+	}
     }
     printf("end init\n");
-    return;
+
     bool* frontier = newA(bool,n);
   
     double mapTime = 0.0;
@@ -183,6 +224,7 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
     {parallel_for(intT i=0;i<n;i++) frontier[i] = 1;}
 
     vertices Frontier(n,n,frontier);
+    Frontier.toDense();
     startTime();
   
     intT round = 0;
@@ -191,13 +233,12 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
 	    break;
 	round++;
 
-	vertices output = edgeMap(GA, Frontier, BP_F<vertex>(product,m_next,GA.V),GA.m/20,DENSE_FORWARD);
+	//vertices output = edgeMap(GA, Frontier, BP_F<vertex>(product,m_next,GA.V),GA.m/20,DENSE_FORWARD);
 
-	vertexMap(Frontier,BP_Vertex_Reset(product));
-
-	edgeMap(GA, Frontier, BP_F_2<vertex>(m_curr,m_next,product,GA.V),GA.m/20,DENSE_FORWARD);
-
-	swap(m_curr, m_next);
+	vertexMap(Frontier,BP_Vertex_Reset(vertD_next));
+	edgeMapDenseBP(GA, Frontier.d, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, offsets));
+	swap(edgeD_curr, edgeD_next);
+	swap(vertD_curr, vertD_next);
     }
     cout<<"Finished in "<<round<<" iterations\n";
     Frontier.del();

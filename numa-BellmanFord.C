@@ -54,6 +54,8 @@ volatile int global_toggle = 0;
 
 vertices *Frontier;
 
+void *graph_ptr;
+
 struct BF_F {
     int* ShortestPathLen;
     int* Visited;
@@ -163,16 +165,19 @@ void *BFSubWorker(void *arg) {
 	currIter++;
 	if (tid + subTid == 0) {
 	    numVisited += Frontier->numNonzeros();
-	    printf("Round %d: num of non zeros: %d\n", currIter, Frontier->numNonzeros());
+	    printf("Round %d: num of non zeros: %d\t", currIter, Frontier->numNonzeros());
 	}
 
 	if (subTid == 0) {
 	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	//pthread_barrier_wait(&global_barr);
-	subworker.globalWait();
+	//subworker.globalWait();
 	//apply edgemap
-	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.n/10, DENSE_FORWARD, false, true, subworker);
+	struct timeval startT, endT;
+	struct timezone tz = {0, 0};
+	gettimeofday(&startT, &tz);
+	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, 0, DENSE_FORWARD, false, true, subworker);
 	//pthread_barrier_wait(&global_barr);
 	subworker.globalWait();
         vertexMap(Frontier, BF_Vertex_F(Visited), tid, subTid, CORES_PER_NODE);
@@ -187,12 +192,20 @@ void *BFSubWorker(void *arg) {
 	    //pthread_barrier_wait(&global_barr);
 	    subworker.globalWait();
 	}
+	gettimeofday(&endT, &tz);
+	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+	double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
 
+	double mapTime = timeEnd - timeStart;
+	if (tid + subTid == 0) {
+	    printf("iteration time: %lf\n", mapTime);
+	}
 	if (subworker.isSubMaster()) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
 	//pthread_barrier_wait(&global_barr);
 	subworker.globalWait();
+	break;
     }
 
     if (tid + subTid == 0) {
@@ -372,17 +385,24 @@ struct BF_Hash_F {
 
 template <class vertex>
 void BF_main(wghGraph<vertex> &GA, intT start) {
-    numOfNode = 1;//numa_num_configured_nodes();
+    numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
-    CORES_PER_NODE = 10;//numa_num_configured_cpus() / numOfNode;
+    CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     BF_Hash_F hasher(GA.n, numOfNode);
-    graphHasher(GA, hasher);
-    partitionByDegree(GA, numOfNode, sizeArr, sizeof(int));
+    //graphHasher(GA, hasher);
+    //partitionByDegree(GA, numOfNode, sizeArr, sizeof(int));
+
+    intT vertPerPage = PAGESIZE / sizeof(double);
+    intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
+    for (int i = 0; i < numOfNode - 1; i++) {
+	sizeArr[i] = subShardSize;
+    }
+    sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
     
     ShortestPathLen_global = (int *)mapDataArray(numOfNode, sizeArr, sizeof(int));
     Visited_global = (int *)mapDataArray(numOfNode, sizeArr, sizeof(int));
@@ -390,6 +410,7 @@ void BF_main(wghGraph<vertex> &GA, intT start) {
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
     int prev = 0;
+    graph_ptr = (void *)(&GA);
     for (int i = 0; i < numOfNode; i++) {
 	BF_worker_arg *arg = (BF_worker_arg *)malloc(sizeof(BF_worker_arg));
 	arg->GA = (void *)(&GA);

@@ -326,15 +326,16 @@ wghGraph<vertex> graphFilter(wghGraph<vertex> &GA, int rangeLow, int rangeHi, bo
 	}
     }
 
-    intT totalSize = 0;
+    long long totalSize = 0;
     for (intT i = 0; i < GA.n; i++) {
 	offsets[i] = totalSize;
 	totalSize += counters[i];
     }
-    //printf("totalSize of %d: %d\n", rangeLow, totalSize);
+    printf("totalSize of %d: %d %ld\n", rangeLow, totalSize, totalSize * 2);
     numa_free(counters, sizeof(int) * GA.n);
 
-    intE *edges = (intE *)numa_alloc_local(sizeof(intE) * totalSize * 2);
+    //intE *edges = (intE *)numa_alloc_local(sizeof(intE) * totalSize * 2);
+    intE *edges = (intE *)malloc((long long)sizeof(intE) * totalSize * (long long)2);
 
     {parallel_for (intT i = 0; i < GA.n; i++) {
 	    intE *localEdges = &edges[offsets[i]*2];
@@ -405,10 +406,13 @@ struct LocalFrontier {
     int endID;
     bool *b;
     intT *s;
+    intT sparseCounter;
+    intT **sparseChunks;
+    intT *chunkSizes;
     intT *tmp;
     bool isDense;
     
-    LocalFrontier(bool *_b, int start, int end):b(_b), startID(start), endID(end), n(end - start), m(0), isDense(true), s(NULL), outEdgesCount(0){}
+    LocalFrontier(bool *_b, int start, int end):b(_b), startID(start), endID(end), n(end - start), m(0), isDense(true), s(NULL), outEdgesCount(0), sparseChunks(NULL), chunkSizes(NULL){}
     
     bool inRange(int index) { return (startID <= index && index < endID);}
     inline void setBit(int index, bool val) { b[index-startID] = val;}
@@ -791,6 +795,63 @@ bool* edgeMapDenseForward(wghGraph<vertex> GA, vertices *frontier, F f, LocalFro
     return NULL;
 }
 
+#define DYNAMIC_CHUNK_SIZE (1024)
+
+template <class F, class vertex>
+bool* edgeMapDenseForwardDynamic(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=NULL) {
+    intT numVertices = GA.n;
+    vertex *G = GA.V;
+    if (subworker.isMaster()) {
+	printf("we are here\n");
+    }
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
+    intT m = 0;
+    intT outEdgesCount = 0;
+    bool *nextB = next->b;
+
+    intT *counterPtr = &(next->sparseCounter);
+
+    intT oldStartPos = 0;
+
+    intT startPos = __sync_fetch_and_add(counterPtr, DYNAMIC_CHUNK_SIZE);
+    intT endPos = (startPos + DYNAMIC_CHUNK_SIZE > numVertices) ? (numVertices) : (startPos + DYNAMIC_CHUNK_SIZE);
+    while (startPos < numVertices) {
+	while (startPos >= nextSwitchPoint) {
+	    currOffset += frontier->getSize(currNodeNum);
+	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	    currNodeNum++;
+	    currBitVector = frontier->getArr(currNodeNum);
+	}
+	for (long i=startPos; i<endPos; i++){
+	    if (i == nextSwitchPoint) {
+		currOffset += frontier->getSize(currNodeNum);
+		nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+		currNodeNum++;
+		currBitVector = frontier->getArr(currNodeNum);
+	    }
+	    m += G[i].getFakeDegree();
+	    if (currBitVector[i-currOffset]) {
+		intT d = G[i].getFakeDegree();
+		for(intT j=0; j<d; j++){
+		    uintT ngh = G[i].getOutNeighbor(j);
+		    if (f.cond(ngh) && f.updateAtomic(i, ngh, G[i].getOutWeight(j))) {
+			next->setBit(ngh, true);
+		    }
+		}
+	    }
+	}
+	oldStartPos = startPos;
+	startPos = __sync_fetch_and_add(counterPtr, DYNAMIC_CHUNK_SIZE);
+	endPos = (startPos + DYNAMIC_CHUNK_SIZE > numVertices) ? (numVertices) : (startPos + DYNAMIC_CHUNK_SIZE);
+    }
+    return NULL;
+}
+
 template <class F, class vertex>
 bool* edgeMapDenseForwardGlobalWrite(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier *nexts[], Subworker_Partitioner &subworker) {
     intT numVertices = GA.n;
@@ -1087,7 +1148,7 @@ void edgeMap(wghGraph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT th
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    
-    intT m = V->numNonzeros();// + V->getEdgeStat();
+    intT m = V->numNonzeros() + V->getEdgeStat();
     
     /*
     if (subworker.isMaster())
@@ -1096,17 +1157,26 @@ void edgeMap(wghGraph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT th
     int start = subworker.dense_start;
     int end = subworker.dense_end;
 
+    if (subworker.isMaster()) {
+	printf(((m >= threshold) ? "Dense\n" : "Sparse\n"));
+    }
+
     if (m >= threshold) {
 	//Dense part
 	if (subworker.isMaster()) {
-	    V->toDense();
+	    V->toDense();	    
+	}
+
+	if (subworker.isSubMaster()) {
+	    next->sparseCounter = 0;
 	}
 	clearLocalFrontier(next, subworker.tid, subworker.subTid, subworker.numOfSub);
 	//pthread_barrier_wait(subworker.global_barr);
 	subworker.globalWait();
 	
 	bool* R = (option == DENSE_FORWARD) ? 
-	    edgeMapDenseForward(GA, V, f, next, part, start, end) : 
+	    //edgeMapDenseForward(GA, V, f, next, part, start, end) :
+	    edgeMapDenseForwardDynamic(GA, V, f, next, subworker) :
 	    edgeMapDense(GA, V, f, next, option, subworker);
 	next->isDense = true;
     } else {

@@ -239,12 +239,23 @@ void *PageRankThread(void *arg) {
 
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
-
+    
+    if (tid == 0) {
+	printf ("average is: %lf\n", GA.m / (float)(my_arg->numOfNode));
+    }
+    pthread_barrier_wait(&barr);
+    intT degreeSum = 0;
+    for (intT i = rangeLow; i < rangeHi; i++) {
+	degreeSum += GA.V[i].getOutDegree();
+    }
+    printf("%d : degree count: %d\n", tid, degreeSum);
+    
     graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
 
-    int sizeOfShards[CORES_PER_NODE];
+    int sizeOfShards[CORES_PER_NODE];    
 
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, true);
+    //intT localDegrees = (intT *)malloc(sizeof(intT) * localGraph.n);
     
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
@@ -414,7 +425,7 @@ template <class vertex>
 void PageRank(graph<vertex> &GA, int maxIter) {
     numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
-    CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
+    CORES_PER_NODE = 10;//numa_num_configured_cpus() / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
@@ -423,6 +434,25 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     PR_Hash_F hasher(GA.n, numOfNode);
     graphHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
+    /*
+    intT vertPerPage = PAGESIZE / sizeof(double);
+    intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
+    for (int i = 0; i < numOfNode - 1; i++) {
+	sizeArr[i] = subShardSize;
+    }
+    sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
+    */
+    int accum = 0;
+    for (int i = 0; i < numOfNode; i++) {
+	intT degreeSum = 0;
+	for (intT j = accum; j < accum + sizeArr[i]; j++) {
+	    degreeSum += GA.V[j].getInDegree();
+	}
+	printf("%d: degree sum: %d\n", i, degreeSum);
+	accum += sizeArr[i];
+    }
+    //return;
+    
     
     p_curr_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
     p_next_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
@@ -444,7 +474,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     shouldStart = 1;
     pthread_barrier_wait(&timerBarr);
     //nextTime("Graph Partition");
-    startTime();
+    nextTime("partition over");
     printf("all created\n");
     for (int i = 0; i < numOfNode; i++) {
 	pthread_join(tids[i], NULL);
@@ -461,7 +491,7 @@ int parallel_main(int argc, char* argv[]) {
     char* iFile;
     bool binary = false;
     bool symmetric = false;
-    int maxIter = -1;
+    int maxIter = 20;
     needResult = false;
     if(argc > 1) iFile = argv[1];
     if(argc > 2) maxIter = atoi(argv[2]);
@@ -469,6 +499,7 @@ int parallel_main(int argc, char* argv[]) {
     if(argc > 4) if((string) argv[4] == (string) "-s") symmetric = true;
     if(argc > 5) if((string) argv[5] == (string) "-b") binary = true;
     numa_set_interleave_mask(numa_all_nodes_ptr);
+    startTime();
     if(symmetric) {
 	graph<symmetricVertex> G = 
 	    readGraph<symmetricVertex>(iFile,symmetric,binary);

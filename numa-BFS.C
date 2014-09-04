@@ -382,7 +382,14 @@ void BFS(intT start, graph<vertex> &GA) {
     PR_Hash_F hasher(GA.n, numOfNode);
     graphHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
-    
+    /*
+    intT vertPerPage = PAGESIZE / sizeof(double);
+    intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
+    for (int i = 0; i < numOfNode - 1; i++) {
+	sizeArr[i] = subShardSize;
+    }
+    sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
+    */
     parents_global = (intT *)mapDataArray(numOfNode, sizeArr, sizeof(intT));
 
     printf("start create %d threads\n", numOfNode);

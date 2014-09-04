@@ -141,7 +141,7 @@ void *ComponentsSubWorker(void *args) {
 
     pthread_barrier_wait(global_barr);
     
-    intT switchThreshold = GA.n/10;
+    intT switchThreshold = GA.m/20;
 
     while (!Frontier->isEmpty() || currIter == 0) {
 	currIter++;
@@ -313,8 +313,15 @@ void Components(graph<vertex> &GA) {
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     int sizeArr[numOfNode];
     Default_Hash_F hasher(GA.n, numOfNode);
-    graphHasher(GA, hasher);
-    partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
+    //graphHasher(GA, hasher);
+    //partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
+
+    intT vertPerPage = PAGESIZE / sizeof(double);
+    intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
+    for (int i = 0; i < numOfNode - 1; i++) {
+	sizeArr[i] = subShardSize;
+    }
+    sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
     
     IDs_global = (intT *)mapDataArray(numOfNode, sizeArr, sizeof(intT));
     PrevIDs_global = (intT *)mapDataArray(numOfNode, sizeArr, sizeof(intT));    

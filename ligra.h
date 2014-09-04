@@ -493,7 +493,7 @@ template <class F, class vertex>
 
 // decides on sparse or dense base on number of nonzeros in the active vertices
 template <class F, class vertex>
-  vertices edgeMap(wghGraph<vertex> GA, vertices V, F f, intT threshold = -1, char option=DENSE, bool remDups=false) {
+vertices edgeMap(wghGraph<vertex> GA, vertices V, F f, intT threshold = -1, char option=DENSE, bool remDups=false) {
   intT numVertices = GA.n;
   uintT numEdges = GA.m;
   if(threshold == -1) threshold = numEdges/20; //default threshold
@@ -518,6 +518,7 @@ template <class F, class vertex>
   uintT outDegrees = sequence::plusReduce(degrees, m);    
   if (outDegrees == 0) return vertices(numVertices);
   if (m + outDegrees > threshold) { 
+      printf("Dense: %d\n", m);
     V.toDense();
     free(degrees);
     free(frontierVertices);
@@ -528,6 +529,7 @@ template <class F, class vertex>
     //cout << "size (D) = " << v1.m << endl;
     return  v1;
   } else { 
+      printf("Sparse: %d\n", m);
     pair<uintT,intT*> R = 
       remDups ? 
       edgeMapSparseW(frontierVertices, V.s, degrees, V.numNonzeros(), f, 

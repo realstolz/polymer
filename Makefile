@@ -29,11 +29,11 @@ endif
 PCFLAGS = -fcilkplus -lcilkrts -O2 -DCILK $(INTT) $(INTE)
 PLFLAGS = -fcilkplus -lcilkrts
 
-COMMON= ligra.h graph.h utils.h IO.h parallel.h gettime.h quickSort.h
+COMMON= ligra.h ligra-rewrite.h ligra-rewrite-wgh.h graph.h utils.h IO.h parallel.h gettime.h quickSort.h
 
 ALL= BFS BC Components Radii PageRank PageRankDelta BellmanFord PageRank-Pull 
 
-MYAPPS= DegreeCount SPMV BP numa-PageRank numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-SPMV numa-BellmanFord ConvertToJSON
+MYAPPS= DegreeCount SPMV BP numa-BP numa-PageRank numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-SPMV numa-BellmanFord ConvertToJSON
 MYHEADER= ligra-rewrite.h ligra-numa.h
 LIBS_I_NEED= -pthread -lnuma
 

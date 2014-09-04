@@ -78,7 +78,7 @@ struct PR_Vertex_Reset {
 
 template <class vertex>
 void PageRank(graph<vertex> GA, int maxIter = -1) {
-  startTime();
+    //startTime();
   const intT n = GA.n;
   const double damping = 0.85;
   const double epsilon = 0.0000001;
@@ -97,7 +97,7 @@ void PageRank(graph<vertex> GA, int maxIter = -1) {
   {parallel_for(intT i=0;i<n;i++) frontier[i] = 1;}
 
   vertices Frontier(n,n,frontier);
-  
+  nextTime("Init");
   intT round = 0;
   while(1){
     if (maxIter > 0 && round >= maxIter)
@@ -169,7 +169,7 @@ int parallel_main(int argc, char* argv[]) {
   if(argc > 3) if((string) argv[3] == (string) "-result") needResult = true;
   if(argc > 4) if((string) argv[4] == (string) "-s") symmetric = true;
   if(argc > 5) if((string) argv[5] == (string) "-b") binary = true;
-  
+  startTime();
   if(symmetric) {
     graph<symmetricVertex> G = 
       readGraph<symmetricVertex>(iFile,symmetric,binary);

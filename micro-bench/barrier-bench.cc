@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include "../custom-barrier.h"
 
+int socketIdx[8] = {0, 2, 3, 1, 5, 4, 6, 7};
 int numOfNode = 0;
 int CORES_PER_NODE = 0;
 
@@ -25,8 +26,8 @@ void printTime(int subTid, struct timeval startT, struct timeval endT) {
     if (subTid != 0) {
 	return;
     }
-    double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
-    double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+    double timeStart = (double)startT.tv_usec;
+    double timeEnd = (double)endT.tv_usec;
     double barrTime = timeEnd - timeStart;
     printf("barrier time: %lf\n", barrTime);
 }
@@ -101,6 +102,7 @@ void *threadSubFunc(void *arg) {
 
 void *threadFunc(void *arg) {
     int tid = *(int *)arg;
+    int node = socketIdx[tid];
     char nodeString[10];
     sprintf(nodeString, "%d", tid);
     printf("%d ok %s\n", tid, nodeString);
@@ -132,9 +134,12 @@ void *threadFunc(void *arg) {
     return NULL;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     numOfNode = numa_num_configured_nodes();
     CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
+    if (argc > 1) {
+	numOfNode = atoi(argv[1]);
+    }
 
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);
     pthread_barrier_init(&submaster_barr, NULL, numOfNode);

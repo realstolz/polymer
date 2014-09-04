@@ -21,7 +21,7 @@
 // LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#include "ligra-rewrite-wgh.h"
+#include "ligra-rewrite.h"
 #include "gettime.h"
 #include "math.h"
 
@@ -36,10 +36,6 @@ int CORES_PER_NODE = 6;
 
 volatile int shouldStart = 0;
 
-double *p_curr_global = NULL;
-double *p_next_global = NULL;
-
-double *p_ans = NULL;
 int vPerNode = 0;
 int numOfNode = 0;
 
@@ -49,57 +45,108 @@ pthread_barrier_t barr;
 pthread_barrier_t global_barr;
 pthread_mutex_t mut;
 
-vertices *All;
+volatile int global_counter = 0;
+volatile int global_toggle = 0;
+
+vertices *Frontier;
+
+#define NSTATES 2
+
+struct EdgeWeight {
+    float potential[NSTATES][NSTATES];
+};
+
+struct EdgeData {
+    float belief[NSTATES];
+};
+
+struct VertexInfo {
+    float potential[NSTATES];
+};
+
+struct VertexData {
+    float product[NSTATES];
+};
+
+template <class ET>
+inline void writeDiv(ET *a, ET b) {
+  volatile ET newV, oldV; 
+  do {oldV = *a; newV = oldV / b;}
+  while (!CAS(a, oldV, newV));
+}
+
+template <class ET>
+inline void writeMult(ET *a, ET b) {
+  volatile ET newV, oldV; 
+  do {oldV = *a; newV = oldV * b;}
+  while (!CAS(a, oldV, newV));
+}
 
 template <class vertex>
-struct SPMV_F {
-    double* p_curr, *p_next;
-    vertex* V;
-    int rangeLow;
-    int rangeHi;
-    SPMV_F(double* _p_curr, double* _p_next, vertex* _V, int _rangeLow, int _rangeHi) : 
-	p_curr(_p_curr), p_next(_p_next), V(_V), rangeLow(_rangeLow), rangeHi(_rangeHi) {}
-
-    inline void *nextPrefetchAddr(intT index) {
-	return &p_curr[index];
-    }
-    inline bool update(intT s, intT d, int edgeLen){ //update function applies PageRank equation
-	p_next[d] += p_curr[s] * edgeLen;
-	return 1;
-    }
-    inline bool updateAtomic (intT s, intT d, int edgeLen) { //atomic Update
-	writeAdd(&p_next[d], p_curr[s] * edgeLen);
-	/*
-	if (d == 110101) {
-	    cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << p_curr[s]/V[s].getOutDegree() << " -- " << p_next[d] << "\n";
+struct BP_F {
+    EdgeWeight *edgeW;
+    EdgeData *edgeD_curr;
+    EdgeData *edgeD_next;
+    VertexInfo *vertI;
+    VertexData *vertD_curr;
+    VertexData *vertD_next;
+    intT *offsets;
+    BP_F(EdgeWeight *_edgeW, EdgeData *_edgeD_curr, EdgeData *_edgeD_next, VertexInfo *_vertI, VertexData *_vertD_curr, VertexData *_vertD_next, intT *_offsets) : 
+	edgeW(_edgeW), edgeD_curr(_edgeD_curr), edgeD_next(_edgeD_next), vertI(_vertI), vertD_curr(_vertD_curr), vertD_next(_vertD_next), offsets(_offsets) {}
+    inline bool update(intT s, intT d, intT edgeIdx){
+	intT dstIdx = offsets[s] + edgeIdx;
+	for (int i = 0; i < NSTATES; i++) {
+	    edgeD_next[dstIdx].belief[i] = 0.0;
+	    for (int j = 0; j < NSTATES; j++) {
+		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];
+	    }
+	    vertD_next[d].product[i] = vertD_next[d].product[i] * edgeD_next[dstIdx].belief[i];
 	}
-	*/
 	return 1;
     }
-    inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
+    inline bool updateAtomic (intT s, intT d, intT edgeIdx) { //atomic Update
+	//printf("we are here: %d\n", s);
+	intT dstIdx = offsets[s] + edgeIdx;
+	//printf("idx: %d\n", dstIdx);
+	for (int i = 0; i < NSTATES; i++) {
+	    edgeD_next[dstIdx].belief[i] = 0.0;
+	    for (int j = 0; j < NSTATES; j++) {
+		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];
+	    }
+	    writeMult(&(vertD_next[d].product[i]), edgeD_next[dstIdx].belief[i]);
+	}
+	return 1;
+    }
+    inline bool cond (intT d) {return 1; } //does nothing
 };
 
 //resets p
-struct SPMV_Vertex_Reset {
-    double* p_curr;
-    SPMV_Vertex_Reset(double* _p_curr) :
-	p_curr(_p_curr) {}
+struct BP_Vertex_Reset {
+    VertexData *vertD;
+    BP_Vertex_Reset(VertexData *_vertD) :
+	vertD(_vertD) {}
     inline bool operator () (intT i) {
-	p_curr[i] = 0.0;
+	for (int i = 0; i < NSTATES; i++) {
+	    vertD[i].product[i] = 1.0;
+	}
 	return 1;
     }
 };
 
-struct SPMV_worker_arg {
+struct BP_worker_arg {
     void *GA;
     int maxIter;
     int tid;
     int numOfNode;
     int rangeLow;
     int rangeHi;
+    
+    VertexInfo *vertI;
+    VertexData *vertD_curr;
+    VertexData *vertD_next;
 };
 
-struct SPMV_subworker_arg {
+struct BP_subworker_arg {
     void *GA;
     int maxIter;
     int tid;
@@ -108,16 +155,24 @@ struct SPMV_subworker_arg {
     int endPos;
     int rangeLow;
     int rangeHi;
-    double **p_curr_ptr;
-    double **p_next_ptr;
     pthread_barrier_t *node_barr;
     LocalFrontier *localFrontier;
+    volatile int *barr_counter;
+    volatile int *toggle;
+
+    VertexInfo *vertI;
+    VertexData *vertD_curr;
+    VertexData *vertD_next;
+    EdgeWeight *edgeW;
+    EdgeData *edgeD_curr;
+    EdgeData *edgeD_next;
+    intT *localOffsets;
 };
 
 template <class vertex>
-void *SPMVSubWorker(void *arg) {
-    SPMV_subworker_arg *my_arg = (SPMV_subworker_arg *)arg;
-    wghGraph<vertex> &GA = *(wghGraph<vertex> *)my_arg->GA;
+void *BeliefPropagationSubWorker(void *arg) {
+    BP_subworker_arg *my_arg = (BP_subworker_arg *)arg;
+    graph<vertex> &GA = *(graph<vertex> *)my_arg->GA;
     const intT n = GA.n;
     int maxIter = my_arg->maxIter;
     int tid = my_arg->tid;
@@ -125,9 +180,6 @@ void *SPMVSubWorker(void *arg) {
     pthread_barrier_t *local_barr = my_arg->node_barr;
     LocalFrontier *output = my_arg->localFrontier;
 
-    double *p_curr = *(my_arg->p_curr_ptr);
-    double *p_next = *(my_arg->p_next_ptr);
-    
     int currIter = 0;
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
@@ -135,48 +187,71 @@ void *SPMVSubWorker(void *arg) {
     int start = my_arg->startPos;
     int end = my_arg->endPos;
 
+    VertexInfo *vertI = my_arg->vertI;
+    VertexData *vertD_curr = my_arg->vertD_curr;
+    VertexData *vertD_next = my_arg->vertD_next;
+
+    EdgeWeight *edgeW = my_arg->edgeW;
+    EdgeData *edgeD_curr = my_arg->edgeD_curr;
+    EdgeData *edgeD_next = my_arg->edgeD_next;
+
+    intT *localOffsets = my_arg->localOffsets;
+
+    Custom_barrier globalCustom(&global_counter, &global_toggle, Frontier->numOfNodes);
+    Custom_barrier localCustom(my_arg->barr_counter, my_arg->toggle, CORES_PER_NODE);
+
     Subworker_Partitioner subworker(CORES_PER_NODE);
     subworker.tid = tid;
     subworker.subTid = subTid;
     subworker.dense_start = start;
     subworker.dense_end = end;
     subworker.global_barr = &global_barr;
+    subworker.local_custom = localCustom;
+    subworker.subMaster_custom = globalCustom;
+
+    if (subTid == 0) {
+	Frontier->getFrontier(tid)->m = rangeHi - rangeLow;
+    }
 
     pthread_barrier_wait(local_barr);
-    if (subworker.isMaster()) {
-	printf("started\n");
-    }
     pthread_barrier_wait(&global_barr);
-    All->m = GA.m;
     while(1) {
 	if (maxIter > 0 && currIter >= maxIter)
             break;
         currIter++;
+	if (subTid == 0)
+	    Frontier->calculateNumOfNonZero(tid);
 	if (subTid == 0) {
-	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	
 	pthread_barrier_wait(&global_barr);
-	//pthread_barrier_wait(local_barr);
-	//edgeMapDenseForward(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, true, start, end);
-	edgeMapDenseForwardDynamic(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, subworker);
-        //edgeMap(GA, All, SPMV_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
+
+	vertexMap(Frontier, BP_Vertex_Reset(vertD_next), tid, subTid, CORES_PER_NODE);
+	output->m = 1;
+
+	pthread_barrier_wait(&global_barr);	
+
+        edgeMapDenseBP(GA, Frontier, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, localOffsets),output,true,start,end);
 
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
 
-	vertexMap(All,SPMV_Vertex_Reset(p_curr), tid, subTid, CORES_PER_NODE);
+	swap(edgeD_curr, edgeD_next);
+	swap(vertD_curr, vertD_next);
+	/*
+	if (subworker.isSubMaster()) {
+	    pthread_barrier_wait(&global_barr);
+	    switchFrontier(tid, Frontier, output);
+	} else {
+	    output = Frontier->getFrontier(tid);
+	    pthread_barrier_wait(&global_barr);
+	}
+	*/
 	pthread_barrier_wait(&global_barr);
-	//pthread_barrier_wait(local_barr);
-	swap(p_curr, p_next);
-
-	pthread_barrier_wait(&global_barr);
-
 	//pthread_barrier_wait(local_barr);
     }
-    if (subworker.isMaster()) {
-	p_ans = p_curr;
-    }
+
     pthread_barrier_wait(local_barr);
     return NULL;
 }
@@ -184,9 +259,9 @@ void *SPMVSubWorker(void *arg) {
 pthread_barrier_t timerBarr;
 
 template <class vertex>
-void *SPMVThread(void *arg) {
-    SPMV_worker_arg *my_arg = (SPMV_worker_arg *)arg;
-    wghGraph<vertex> &GA = *(wghGraph<vertex> *)my_arg->GA;
+void *BeliefPropagationThread(void *arg) {
+    BP_worker_arg *my_arg = (BP_worker_arg *)arg;
+    graph<vertex> &GA = *(graph<vertex> *)my_arg->GA;
     int maxIter = my_arg->maxIter;
     int tid = my_arg->tid;
 
@@ -197,18 +272,41 @@ void *SPMVThread(void *arg) {
 
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
-    printf("%d before partition\n", tid);
-    wghGraph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
-    printf("%d after partition\n", tid);
+
+    graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+
+    // create edge data
+
+    intT *fakeDegrees = (intT *)numa_alloc_local(sizeof(intT) * localGraph.n);
+    intT *localOffsets = (intT *)numa_alloc_local(sizeof(intT) * localGraph.n);
+
+    {parallel_for (intT i = 0; i < localGraph.n; i++) {
+	    fakeDegrees[i] = localGraph.V[i].getFakeDegree();
+	}
+    }
+
+    localOffsets[0] = 0;
+    for (intT i = 1; i < localGraph.n; i++) {
+	localOffsets[i] = localOffsets[i-1] + fakeDegrees[i-1];
+    }
+
+    intT numLocalEdge = localOffsets[localGraph.n - 1];
+
+    EdgeWeight *edgeW = (EdgeWeight *)numa_alloc_local(sizeof(EdgeWeight) * numLocalEdge);
+    
+    EdgeData *edgeD_curr = (EdgeData *)numa_alloc_local(sizeof(EdgeData) * numLocalEdge);
+    EdgeData *edgeD_next = (EdgeData *)numa_alloc_local(sizeof(EdgeData) * numLocalEdge);
 
     int sizeOfShards[CORES_PER_NODE];
-    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, true);
+
+    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(VertexData), true, true);
+    
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
     }
 
     while (shouldStart == 0) ;
-    pthread_barrier_wait(&timerBarr);
+
     printf("over filtering\n");
     /*
     if (0 != __cilkrts_set_param("nworkers","1")) {
@@ -223,18 +321,7 @@ void *SPMVThread(void *arg) {
 
     //printf("blockSizeof %d: %d low: %d high: %d\n", tid, blockSize, rangeLow, rangeHi);
 
-    double one_over_n = 1/(double)n;
-    
-    
-    double* p_curr = p_curr_global;
-    double* p_next = p_next_global;
     bool* frontier = (bool *)numa_alloc_local(sizeof(bool) * blockSize);
-    
-    /*
-    double* p_curr = (double *)malloc(sizeof(double) * blockSize);
-    double* p_next = (double *)malloc(sizeof(double) * blockSize);
-    bool* frontier = (bool *)malloc(sizeof(bool) * blockSize);
-    */
     
     /*
     if (tid == 0)
@@ -244,11 +331,9 @@ void *SPMVThread(void *arg) {
     struct timeval start, end;
     struct timezone tz = {0, 0};
 
-    for(intT i=rangeLow;i<rangeHi;i++) p_curr[i] = one_over_n;
-    for(intT i=rangeLow;i<rangeHi;i++) p_next[i] = 0; //0 if unchanged
     for(intT i=0;i<blockSize;i++) frontier[i] = true;
     if (tid == 0)
-	All = new vertices(numOfT);
+	Frontier = new vertices(numOfT);
 
     //printf("register %d: %p\n", tid, frontier);
     
@@ -260,12 +345,12 @@ void *SPMVThread(void *arg) {
 
     pthread_barrier_wait(&barr);
     
-    All->registerFrontier(tid, current);
+    Frontier->registerFrontier(tid, current);
 
     pthread_barrier_wait(&barr);
 
     if (tid == 0)
-	All->calculateOffsets();
+	Frontier->calculateOffsets();
 
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
@@ -274,40 +359,55 @@ void *SPMVThread(void *arg) {
 
     pthread_t subTids[CORES_PER_NODE];    
 
+    volatile int local_custom_counter;
+    volatile int local_toggle;
+
     for (int i = 0; i < CORES_PER_NODE; i++) {	
-	SPMV_subworker_arg *arg = (SPMV_subworker_arg *)malloc(sizeof(SPMV_subworker_arg));
+	BP_subworker_arg *arg = (BP_subworker_arg *)malloc(sizeof(BP_subworker_arg));
 	arg->GA = (void *)(&localGraph);
 	arg->maxIter = maxIter;
 	arg->tid = tid;
 	arg->subTid = i;
 	arg->rangeLow = rangeLow;
 	arg->rangeHi = rangeHi;
-	arg->p_curr_ptr = &p_curr;
-	arg->p_next_ptr = &p_next;
 	arg->node_barr = &localBarr;
 	arg->localFrontier = output;
+
+	arg->barr_counter = &local_custom_counter;
+	arg->toggle = &local_toggle;
 	
 	arg->startPos = startPos;
 	arg->endPos = startPos + sizeOfShards[i];
+
+	arg->edgeW = edgeW;
+	arg->edgeD_curr = edgeD_curr;
+	arg->edgeD_next = edgeD_next;
+
+	arg->vertI = my_arg->vertI;
+	arg->vertD_curr = my_arg->vertD_curr;
+	arg->vertD_next = my_arg->vertD_next;
+	arg->localOffsets = localOffsets;
 	startPos = arg->endPos;
-        pthread_create(&subTids[i], NULL, SPMVSubWorker<vertex>, (void *)arg);
+        pthread_create(&subTids[i], NULL, BeliefPropagationSubWorker<vertex>, (void *)arg);
     }
 
     pthread_barrier_wait(&barr);
+    pthread_barrier_wait(&timerBarr);
 
     pthread_barrier_wait(&localBarr);
 
     pthread_barrier_wait(&localBarr);
 
     pthread_barrier_wait(&barr);
+    intT round = 0;
     return NULL;
 }
 
-struct SPMV_Hash_F {
+struct BP_Hash_F {
     int shardNum;
     int vertPerShard;
     int n;
-    SPMV_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    BP_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
     
     inline int hashFunc(int index) {
 	if (index >= shardNum * vertPerShard) {
@@ -329,7 +429,7 @@ struct SPMV_Hash_F {
 };
 
 template <class vertex>
-void SPMV_main(wghGraph<vertex> &GA, int maxIter) {
+void BeliefPropagation(graph<vertex> &GA, int maxIter) {
     numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
     CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
@@ -338,10 +438,10 @@ void SPMV_main(wghGraph<vertex> &GA, int maxIter) {
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
-    SPMV_Hash_F hasher(GA.n, numOfNode);
+    BP_Hash_F hasher(GA.n, numOfNode);
     //graphHasher(GA, hasher);
-    //partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
-    
+    //partitionByDegree(GA, numOfNode, sizeArr, sizeof(VertexData));
+
     intT vertPerPage = PAGESIZE / sizeof(double);
     intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
     for (int i = 0; i < numOfNode - 1; i++) {
@@ -349,22 +449,27 @@ void SPMV_main(wghGraph<vertex> &GA, int maxIter) {
     }
     sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
     
-    p_curr_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
-    p_next_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
+    VertexInfo *vertI = (VertexInfo *)malloc(sizeof(VertexInfo) * GA.n);
+    VertexData *vertD_curr = (VertexData *)mapDataArray(numOfNode, sizeArr, sizeof(VertexData));
+    VertexData *vertD_next = (VertexData *)mapDataArray(numOfNode, sizeArr, sizeof(VertexData));
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
     int prev = 0;
     for (int i = 0; i < numOfNode; i++) {
-	SPMV_worker_arg *arg = (SPMV_worker_arg *)malloc(sizeof(SPMV_worker_arg));
+	BP_worker_arg *arg = (BP_worker_arg *)malloc(sizeof(BP_worker_arg));
 	arg->GA = (void *)(&GA);
 	arg->maxIter = maxIter;
 	arg->tid = i;
 	arg->numOfNode = numOfNode;
 	arg->rangeLow = prev;
 	arg->rangeHi = prev + sizeArr[i];
+	
+	arg->vertI = vertI;
+	arg->vertD_curr = vertD_curr;
+	arg->vertD_next = vertD_next;
 	prev = prev + sizeArr[i];
-	pthread_create(&tids[i], NULL, SPMVThread<vertex>, (void *)arg);
+	pthread_create(&tids[i], NULL, BeliefPropagationThread<vertex>, (void *)arg);
     }
     shouldStart = 1;
     pthread_barrier_wait(&timerBarr);
@@ -374,11 +479,9 @@ void SPMV_main(wghGraph<vertex> &GA, int maxIter) {
     for (int i = 0; i < numOfNode; i++) {
 	pthread_join(tids[i], NULL);
     }
-    nextTime("SPMV");
+    nextTime("BeliefPropagation");
     if (needResult) {
-	for (intT i = 0; i < GA.n; i++) {
-	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
-	}
+
     }
 }
 
@@ -395,15 +498,15 @@ int parallel_main(int argc, char* argv[]) {
     if(argc > 5) if((string) argv[5] == (string) "-b") binary = true;
     numa_set_interleave_mask(numa_all_nodes_ptr);
     if(symmetric) {
-	wghGraph<symmetricWghVertex> WG = 
-	    readWghGraph<symmetricWghVertex>(iFile,symmetric,binary);
-	SPMV_main(WG, maxIter);
-	WG.del(); 
+	graph<symmetricVertex> G = 
+	    readGraph<symmetricVertex>(iFile,symmetric,binary);
+	BeliefPropagation(G, maxIter);
+	G.del(); 
     } else {
-	wghGraph<asymmetricWghVertex> WG = 
-	    readWghGraph<asymmetricWghVertex>(iFile,symmetric,binary);
-	SPMV_main(WG, maxIter);
-	WG.del();
+	graph<asymmetricVertex> G = 
+	    readGraph<asymmetricVertex>(iFile,symmetric,binary);
+	BeliefPropagation(G, maxIter);
+	G.del();
     }
     return 0;
 }

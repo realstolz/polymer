@@ -74,7 +74,7 @@ _seq<char> readStringFromFile(char *fileName) {
   file.seekg (0, ios::beg);
   long n = end - file.tellg();
   char* bytes = newA(char,n+1);
-  printf("end is: %lu, n is: %lu, bytes is: %p\n", end, n, bytes);
+  //printf("end is: %lu, n is: %lu, bytes is: %p\n", end, n, bytes);
   file.read (bytes,n);
   file.close();
   return _seq<char>(bytes,n);
@@ -187,7 +187,7 @@ template <class vertex>
 wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
   _seq<char> S = readStringFromFile(fname);
   words W = stringToWords(S.A, S.n);
-  printf("convert over\n");
+  //printf("convert over\n");
   if (W.Strings[0] != (string) "WeightedAdjacencyGraph") {
     cout << "Bad input file" << endl;
     abort();
@@ -244,7 +244,7 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
 	tOffsets[temp[i].first] = i;
       }
       }}
-    printf("offset over\n");
+    //printf("offset over\n");
     free(temp);
 
     uintT currOffset = m;

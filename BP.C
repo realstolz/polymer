@@ -188,6 +188,30 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
     }
 
     printf("%d %d %d\n", n, offsets[n-1] + degrees[n-1], GA.m);
+    /*
+    {parallel_for (intT i = 0; i < n; i++) {
+	    intT o = offsets[i];
+	    intT d = degrees[i];
+	    vertex vert = GA.V[i];
+	    for (intT j = 0; j < d; j++) {
+		intT ngh = vert.getOutNeighbor(j);
+		int idx = -1;
+		intT ngh_d = GA.V[ngh].getOutDegree();
+		vertex ngh_vert = GA.V[ngh];
+		for (intT k = 0; k < ngh_d; k++) {
+		    if (ngh_vert.getOutNeighbor(k) == i) {
+			idx = k;
+			break;
+		    }
+		}
+		if (idx == -1) {
+		    printf("not symmetric\n");
+		}
+	    }
+	}
+    }
+    */
+    printf("check over\n");
   
     EdgeWeight *edgeW = (EdgeWeight *)malloc(sizeof(EdgeWeight) * GA.m);
     EdgeData *edgeD_curr = (EdgeData *)malloc(sizeof(EdgeData) * GA.m);

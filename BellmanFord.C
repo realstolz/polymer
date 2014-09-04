@@ -79,12 +79,21 @@ int* BellmanFord(intT start, wghGraph<vertex> GA) {
       {parallel_for(intT i=0;i<n;i++) ShortestPathLen[i] = -(INT_MAX/2);}
       break;
     }
+    struct timeval startT, endT;
+    struct timezone tz = {0, 0};
+    gettimeofday(&startT, &tz);
     cout<<"Round "<<round<<" "<<Frontier.numNonzeros()<<endl;
 
     vertices output = edgeMap(GA, Frontier, BF_F(ShortestPathLen,Visited), GA.m/20,DENSE_FORWARD);
     vertexMap(output,BF_Vertex_F(Visited));
     Frontier.del();
     Frontier = output;
+    gettimeofday(&endT, &tz);
+    double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+    double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+    
+    double mapTime = timeEnd - timeStart;
+    printf("iteration time: %lf\n", mapTime);  
   } 
 
   Frontier.del();

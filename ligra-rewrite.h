@@ -152,18 +152,36 @@ void partitionByDegree(graph<vertex> GA, int numOfShards, int *sizeArr, int size
     }
 
     int averageDegree = totalDegree / numOfShards;
+    printf("average is %d\n", averageDegree);
     int counter = 0;
     int tmpSizeCounter = 0;
     for (intT i = 0; i < n; i+=PAGESIZE/sizeOfOneEle) {
+	int localAccum = 0;
+	int localSize = 0;
 	for (intT j = 0; j < PAGESIZE / sizeOfOneEle; j++) {
 	    if (i + j >= n)
 		break;
-	    accum[counter] += degrees[i + j];
-	    sizeArr[counter]++;
+	    //accum[counter] += degrees[i + j];
+	    //sizeArr[counter]++;
+	    localAccum += degrees[i + j];
+	    localSize++;
 	    tmpSizeCounter++;
 	}
+	accum[counter] += localAccum;
+	sizeArr[counter] += localSize;
 	if (accum[counter] >= averageDegree && counter < numOfShards - 1) {
+	    int oldDiff = averageDegree - (accum[counter] - localAccum);
+	    int newDiff = accum[counter] - averageDegree;
+	    if (oldDiff < newDiff) {
+		accum[counter] -= localAccum;
+		sizeArr[counter] -= localSize;
+	    } else {
+		localAccum = 0;
+		localSize = 0;
+	    }
 	    counter++;
+	    accum[counter] += localAccum;
+	    sizeArr[counter] += localSize;
 	    //cout << tmpSizeCounter / (double)(PAGESIZE / sizeOfOneEle) << endl;
 	    tmpSizeCounter = 0;
 	}
@@ -859,6 +877,115 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     //writeAdd(&(next->m), m);
     //writeAdd(&(next->outEdgesCount), outEdgesCount);
     //printf("edgeMap: %d %d\n", m, outEdgesCount);
+    return NULL;
+}
+
+#define DYNAMIC_CHUNK_SIZE (64)
+
+template <class F, class vertex>
+bool* edgeMapDenseForwardDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=NULL) {
+    intT numVertices = GA.n;
+    vertex *G = GA.V;
+    if (subworker.isMaster()) {
+	printf("we are here\n");
+    }
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
+    intT m = 0;
+    intT outEdgesCount = 0;
+    bool *nextB = next->b;
+
+    intT *counterPtr = &(next->sparseCounter);
+
+    intT oldStartPos = 0;
+
+    intT startPos = __sync_fetch_and_add(counterPtr, DYNAMIC_CHUNK_SIZE);
+    intT endPos = (startPos + DYNAMIC_CHUNK_SIZE > numVertices) ? (numVertices) : (startPos + DYNAMIC_CHUNK_SIZE);
+    while (startPos < numVertices) {
+	m = 0;
+	while (startPos >= nextSwitchPoint) {
+	    currOffset += frontier->getSize(currNodeNum);
+	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	    currNodeNum++;
+	    currBitVector = frontier->getArr(currNodeNum);
+	}
+	for (long i=startPos; i<endPos; i++){
+	    if (i == nextSwitchPoint) {
+		currOffset += frontier->getSize(currNodeNum);
+		nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+		currNodeNum++;
+		currBitVector = frontier->getArr(currNodeNum);
+	    }
+	    m += G[i].getFakeDegree();
+	    if (currBitVector[i-currOffset]) {
+		intT d = G[i].getFakeDegree();
+		for(intT j=0; j<d; j++){
+		    uintT ngh = G[i].getOutNeighbor(j);
+		    if (f.cond(ngh) && f.updateAtomic(i, ngh)) {
+			next->setBit(ngh, true);
+		    }
+		}
+	    }
+	}
+
+	if (subworker.tid == 7) {
+	    //printf("%d: %d to %d deg: %d\n", subworker.subTid, startPos, endPos, m);
+	}
+
+	oldStartPos = startPos;
+	startPos = __sync_fetch_and_add(counterPtr, DYNAMIC_CHUNK_SIZE);
+	endPos = (startPos + DYNAMIC_CHUNK_SIZE > numVertices) ? (numVertices) : (startPos + DYNAMIC_CHUNK_SIZE);
+    }
+    return NULL;
+}
+
+template <class F, class vertex>
+bool* edgeMapDenseBP(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, int start = 0, int end = 0) {
+    intT numVertices = GA.n;
+    vertex *G = GA.V;
+
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
+    intT m = 0;
+    intT outEdgesCount = 0;
+    bool *nextB = next->b;
+    
+    int startPos = 0;
+    int endPos = numVertices;
+    if (part) {
+	startPos = start;
+	endPos = end;
+	currNodeNum = frontier->getNodeNumOfIndex(startPos);
+	currBitVector = frontier->getArr(currNodeNum);
+	nextSwitchPoint = frontier->getOffset(currNodeNum+1);
+	currOffset = frontier->getOffset(currNodeNum);
+    }
+    for (long i=startPos; i<endPos; i++){
+	if (i == nextSwitchPoint) {
+	    currOffset += frontier->getSize(currNodeNum);
+	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	    currNodeNum++;
+	    currBitVector = frontier->getArr(currNodeNum);
+	}
+	m += G[i].getFakeDegree();
+	if (currBitVector[i-currOffset]) {
+	    intT d = G[i].getFakeDegree();
+	    for(intT j=0; j<d; j++){
+		uintT ngh = G[i].getOutNeighbor(j);
+		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh,j)) {
+		    next->setBit(ngh, true);
+		}
+	    }
+	}
+    }
     return NULL;
 }
 
@@ -1817,13 +1944,18 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	    V->toDense();
 	}
 
+	if (subworker.isSubMaster()) {
+	    next->sparseCounter = 0;
+	}
+
 	clearLocalFrontier(next, subworker.tid, subworker.subTid, subworker.numOfSub);
 
 	//pthread_barrier_wait(subworker.global_barr);
 	subworker.globalWait();
 	
 	bool* R = (option == DENSE_FORWARD) ? 
-	    edgeMapDenseForward(GA, V, f, next, part, start, end) : 
+	    edgeMapDenseForward(GA, V, f, next, part, start, end) :
+	    //edgeMapDenseForwardDynamic(GA, V, f, next, subworker) : 
 	    edgeMapDense(GA, V, f, next, option, subworker);
 	next->isDense = true;
     } else {

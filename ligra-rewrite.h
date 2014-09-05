@@ -1725,7 +1725,8 @@ void edgeMapSparseV4(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	next->outEdgesCount = 0;
 	int bufferLen = frontier->getEdgeStat();
 	
-	pthread_barrier_wait(subworker.local_barr);
+	//pthread_barrier_wait(subworker.local_barr);
+	subworker.localWait();
 
 	if (startPos < endPos) {
 	    int currNodeNum = frontier->getNodeNumOfSparseIndex(startPos);
@@ -1764,12 +1765,14 @@ void edgeMapSparseV4(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	next->sparseChunks[subworker.subTid] = nextChunk;
 	__sync_fetch_and_add(&(next->m), nextM);
 	__sync_fetch_and_add(&(next->outEdgesCount), nextEdgesCount);
-	pthread_barrier_wait(subworker.global_barr);
+	//pthread_barrier_wait(subworker.global_barr);
+	subworker.globalWait();
     } else {
 	intT numOfChunks = subworker.numOfSub * frontier->numOfNodes;
 	next->sparseCounter = 0;
 	next->m = 0;
-	pthread_barrier_wait(subworker.local_barr);
+	//pthread_barrier_wait(subworker.local_barr);
+	subworker.localWait();
 	
 	intT fetchedChunk = __sync_fetch_and_add(&(next->sparseCounter), 1);
 	while (fetchedChunk < numOfChunks) {
@@ -1797,7 +1800,8 @@ void edgeMapSparseV4(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	next->sparseChunks[subworker.subTid] = nextChunk;
 	__sync_fetch_and_add(&(next->m), nextM);
 	__sync_fetch_and_add(&(next->outEdgesCount), nextEdgesCount);
-	pthread_barrier_wait(subworker.global_barr);
+	//pthread_barrier_wait(subworker.global_barr);
+	subworker.globalWait();
     }
 }
 

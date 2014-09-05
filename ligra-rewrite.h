@@ -1091,6 +1091,9 @@ bool* edgeMapDenseDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     intT outEdgesCount = 0;
     bool *nextB = next->b;
 
+    intT chunkSize = numVertices / frontier->numOfNodes;
+    intT rollingOffset = subworker.tid * chunkSize;
+
     intT *counterPtr = &(next->sparseCounter);
 
     intT oldStartPos = 0;
@@ -1099,28 +1102,45 @@ bool* edgeMapDenseDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     intT endPos = (startPos + DYNAMIC_CHUNK_SIZE > numVertices) ? (numVertices) : (startPos + DYNAMIC_CHUNK_SIZE);
     while (startPos < numVertices) {
 	m = 0;
-	while (startPos >= nextSwitchPoint) {
+	intT actualSize = endPos - startPos;
+	intT actualStart = startPos + rollingOffset;
+	while (actualStart >= nextSwitchPoint) {
 	    currOffset += frontier->getSize(currNodeNum);
 	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
 	    currNodeNum++;
-	    currBitVector = frontier->getNextArr(currNodeNum);
+	    if (currNodeNum >= frontier->numOfNodes) {
+		currNodeNum = 0;
+		currOffset = 0;
+		nextSwitchPoint = frontier->getSize(0) + numVertices;
+		printf("switch back\n");
+	    } else {
+		currBitVector = frontier->getNextArr(currNodeNum);
+	    }
 	}
 	for (long i=startPos; i<endPos; i++){
-	    if (i == nextSwitchPoint) {
+	    intT idx = (i + rollingOffset) % numVertices;
+	    if (i + rollingOffset == nextSwitchPoint) {
 		currOffset += frontier->getSize(currNodeNum);
 		nextSwitchPoint += frontier->getSize(currNodeNum + 1);
 		currNodeNum++;
-		currBitVector = frontier->getArr(currNodeNum);
+		if (currNodeNum >= frontier->numOfNodes) {
+		    currNodeNum = 0;
+		    currOffset = 0;
+		    nextSwitchPoint = frontier->getSize(0) + numVertices;
+		    printf("switch back\n");
+		} else {
+		    currBitVector = frontier->getNextArr(currNodeNum);
+		}
 	    }
-	    m += G[i].getFakeDegree();
-	    if (f.cond(i)) {
-		intT d = G[i].getFakeInDegree();
+	    m += G[idx].getFakeDegree();
+	    if (f.cond(idx)) {
+		intT d = G[idx].getFakeInDegree();
 		for(intT j=0; j<d; j++){
-		    uintT ngh = G[i].getInNeighbor(j);
-		    if (localBitVec[ngh-localOffset] && f.updateAtomic(ngh, i)) {
-			currBitVector[i - currOffset] = true;
+		    uintT ngh = G[idx].getInNeighbor(j);
+		    if (localBitVec[ngh-localOffset] && f.updateAtomic(ngh, idx)) {
+			currBitVector[idx - currOffset] = true;
 		    }
-		    if (!f.cond(i)) {
+		    if (!f.cond(idx)) {
 			break;
 		    }
 		}

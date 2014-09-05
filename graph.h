@@ -20,12 +20,14 @@ struct symmetricVertex {
     intE* getOutNeighborPtr() { return neighbors;}
     intT getInDegree() { return degree; }
     intT getOutDegree() { return degree; }
+    intT getFakeInDegree() { return fakeDegree;}
     intT getFakeDegree() { return fakeDegree; }
     void setInNeighbors(intE* _i) { neighbors = _i; }
     void setOutNeighbors(intE* _i) { neighbors = _i; }
     void setInDegree(intT _d) { degree = _d; }
     void setOutDegree(intT _d) { degree = _d; }
     void setFakeDegree(intT _d) { fakeDegree = _d; }
+    void setFakeInDegree(intT _d) { fakeDegree = _d; }
     void flipEdges() {}
 };
 
@@ -33,6 +35,7 @@ struct asymmetricVertex {
     intE* inNeighbors;
     intE* outNeighbors;
     intT outDegree;
+    intT fakeInDegree;
     intT fakeOutDegree;
     intT inDegree;
     void del() {free(inNeighbors); free(outNeighbors);}
@@ -43,12 +46,14 @@ struct asymmetricVertex {
     intE* getOutNeighborPtr() { return outNeighbors;}
     intT getInDegree() { return inDegree; }
     intT getOutDegree() { return outDegree; }
+    intT getFakeInDegree() { return fakeInDegree;}
     intT getFakeDegree() { return fakeOutDegree; }
     void setInNeighbors(intE* _i) { inNeighbors = _i; }
     void setOutNeighbors(intE* _i) { outNeighbors = _i; }
     void setInDegree(intT _d) { inDegree = _d; }
     void setOutDegree(intT _d) { outDegree = _d; }
     void setFakeDegree(intT _d) { fakeOutDegree = _d; }
+    void setFakeInDegree(intT _d) { fakeInDegree = _d; }
     void flipEdges() { swap(inNeighbors,outNeighbors); swap(inDegree,outDegree); }
 };
 

@@ -167,7 +167,7 @@ void *BFSSubWorker(void *arg) {
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	gettimeofday(&startT, &tz);
-	edgeMap(GA, Frontier, BFS_F(parents), output, GA.m/20, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, BFS_F(parents), output, GA.m/20, DENSE_PARALLEL, false, true, subworker);
 	subworker.localWait();
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	//edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);
@@ -184,7 +184,7 @@ void *BFSSubWorker(void *arg) {
 	if (subworker.isSubMaster()) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
-	//pthread_barrier_wait(global_barr);
+	pthread_barrier_wait(global_barr);
 	subworker.globalWait();
 	gettimeofday(&endT, &tz);
 	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
@@ -219,7 +219,8 @@ void *BFSWorker(void *arg) {
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
 
-    graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    //graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
     
     while (shouldStart == 0);
     const intT n = GA.n;
@@ -380,7 +381,7 @@ void BFS(intT start, graph<vertex> &GA) {
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     int sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
-    graphHasher(GA, hasher);
+    graphAllEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
     /*
     intT vertPerPage = PAGESIZE / sizeof(double);

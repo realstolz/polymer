@@ -276,6 +276,7 @@ pair<uintT,intT*> edgeMapSparse(vertex* frontierVertices, intT* indices,
     intT o = offsets[i];
     vertex vert = frontierVertices[i]; 
     intT d = vert.getOutDegree();
+    //printf("degree: %d\n", d);
     if(d < 1000) {
       for (intT j=0; j < d; j++) {
 	intT ngh = vert.getOutNeighbor(j);
@@ -332,7 +333,7 @@ vertices edgeMap(graph<vertex> GA, vertices V, F f, intT threshold = -1,
   edgesTraversed += outDegrees;
   if (outDegrees == 0) return vertices(numVertices);
   if (m + outDegrees > threshold) { 
-    printf("Dense : %d\n", m);
+    printf("Dense : %d %d\n", m, outDegrees);
     V.toDense();
     free(degrees);
     free(frontierVertices);
@@ -343,7 +344,7 @@ vertices edgeMap(graph<vertex> GA, vertices V, F f, intT threshold = -1,
     //cout << "size (D) = " << v1.m << endl;
     return  v1;
   } else { 
-    printf("Sparse : %d\n", m);
+    printf("Sparse : %d %d\n", m, outDegrees);
     pair<uintT,intT*> R = 
       remDups ? 
       edgeMapSparse(frontierVertices, V.s, degrees, V.numNonzeros(), f, 

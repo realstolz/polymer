@@ -76,6 +76,7 @@ void BFS(intT start, graph<vertex> GA) {
 
     Frontier.del();
     Frontier = output; //set new frontier
+    //break;
   } 
 
   Frontier.del();

@@ -103,11 +103,13 @@ struct symmetricWghVertex {
     intT getInDegree() { return degree; }
     intT getOutDegree() { return degree; }
     intT getFakeDegree() { return fakeDegree; }
+    intT getFakeInDegree() { return fakeDegree; }
     void setInNeighbors(intE* _i) { neighbors = _i; }
     void setOutNeighbors(intE* _i) { neighbors = _i; }
     void setInDegree(intT _d) { degree = _d; }
     void setOutDegree(intT _d) { degree = _d; }
     void setFakeDegree(intT _d) { fakeDegree = _d; }
+    void setFakeInDegree(intT _d) { fakeDegree = _d; }
 };
 
 struct asymmetricWghVertex {
@@ -118,6 +120,7 @@ struct asymmetricWghVertex {
     intT inDegree;
     intT outDegree;
     intT fakeOutDegree;
+    intT fakeInDegree;
     void del() {free(inNeighbors); free(outNeighbors);}
     asymmetricWghVertex(intE* iN, intE* oN, intT id, intT od) : inNeighbors(iN), outNeighbors(oN), inDegree(id), outDegree(od) {}
     intE getInNeighbor(intT j) { return inNeighbors[2*j]; }
@@ -129,11 +132,13 @@ struct asymmetricWghVertex {
     intT getInDegree() { return inDegree; }
     intT getOutDegree() { return outDegree; }
     intT getFakeDegree() { return fakeOutDegree; }
+    intT getFakeInDegree() { return fakeInDegree; }
     void setInNeighbors(intE* _i) { inNeighbors = _i; }
     void setOutNeighbors(intE* _i) { outNeighbors = _i; }
     void setInDegree(intT _d) { inDegree = _d; }
     void setOutDegree(intT _d) { outDegree = _d; }
     void setFakeDegree(intT _d) { fakeOutDegree = _d; }
+    void setFakeInDegree(intT _d) { fakeInDegree = _d; }
 };
 
 template <class vertex>

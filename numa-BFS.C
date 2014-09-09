@@ -52,6 +52,8 @@ int numOfNode = 0;
 
 bool needResult = false;
 
+void *fullGraph;
+
 struct BFS_F {
     intT* Parents;
     BFS_F(intT* _Parents) : Parents(_Parents) {}
@@ -105,6 +107,100 @@ struct BFS_subworker_arg {
     volatile int *barr_counter;
     volatile int *toggle;
 };
+
+template <class F, class vertex>
+bool* edgeMapDenseNoRep(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
+    intT numVertices = GA.n;
+    graph<vertex> &fullG = *(graph<vertex> *)fullGraph;
+    //intT size = next->endID - next->startID;
+    //vertex *G = GA.V;
+    vertex *G = fullG.V;
+
+    if (subworker.isSubMaster()) {
+	frontier->nextFrontiers[subworker.tid] = next;
+    }
+
+    subworker.globalWait();
+    int localOffset = next->startID;
+    bool *localBitVec = frontier->getArr(subworker.tid);
+    int currNodeNum = subworker.tid;
+    bool *currBitVector = frontier->getNextArr(currNodeNum);
+    int currOffset = frontier->getOffset(currNodeNum);
+    int counter = 0;
+
+    int size = frontier->getSize(subworker.tid);
+    int subSize = size / CORES_PER_NODE;
+    intT startPos = subSize * subworker.subTid;
+    intT endPos = subSize * (subworker.subTid + 1);
+    if (subworker.subTid == CORES_PER_NODE - 1) {
+	endPos = size;
+    }
+
+    startPos += currOffset;
+    endPos += currOffset;
+
+    for (intT i = startPos; i < endPos; i++){
+	//next->setBit(i, false);
+	if (f.cond(i)) { 
+	    intT d = G[i].getInDegree();
+	    for(intT j=0; j<d; j++){
+		intT ngh = G[i].getInNeighbor(j);
+		if (frontier->getBit(ngh) && f.updateAtomic(ngh,i)) {
+		    currBitVector[i - currOffset] = true;
+		}
+		if(!f.cond(i)) break;
+		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
+	    }
+	}
+    }
+    return NULL;
+}
+
+template <class F, class vertex>
+void edgeMapNoRep(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
+	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = NULL) {
+    intT numVertices = GA.n;
+    uintT numEdges = GA.m;
+    vertex *G = GA.V;    
+    intT m = V->numNonzeros() + V->getEdgeStat();
+    
+    int start = subworker.dense_start;
+    int end = subworker.dense_end;
+
+    if (m >= threshold) {       
+	//Dense part	
+	if (subworker.isMaster()) {
+	    printf("Dense: %d %d\n", V->numNonzeros(), m);
+	    V->toDense();
+	}
+
+	if (subworker.isSubMaster()) {
+	    next->sparseCounter = 0;
+	}
+
+	clearLocalFrontier(next, subworker.tid, subworker.subTid, subworker.numOfSub);
+
+	subworker.globalWait();
+	
+	bool* R = (option == DENSE_FORWARD) ? 
+	    edgeMapDenseForward(GA, V, f, next, part, start, end) :
+	    edgeMapDenseNoRep(GA, V, f, next, option, subworker);
+	next->isDense = true;
+    } else {
+	//Sparse part
+	if (subworker.isMaster()) {
+	    printf("Sparse: %d %d\n", V->numNonzeros(), m);
+	    V->toSparse();
+	}
+	subworker.globalWait();
+	if (V->firstSparse && subworker.isMaster()) {
+	    printf("my first sparse\n");
+	}
+	
+	edgeMapSparseV3(GA, V, f, next, part, subworker);
+	next->isDense = false;
+    }
+}
 
 template <class vertex>
 void *BFSSubWorker(void *arg) {
@@ -167,7 +263,7 @@ void *BFSSubWorker(void *arg) {
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	gettimeofday(&startT, &tz);
-	edgeMap(GA, Frontier, BFS_F(parents), output, GA.m/20, DENSE_PARALLEL, false, true, subworker);
+	edgeMapNoRep(GA, Frontier, BFS_F(parents), output, GA.m/20, DENSE_PARALLEL, false, true, subworker);
 	subworker.localWait();
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	//edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);
@@ -184,7 +280,7 @@ void *BFSSubWorker(void *arg) {
 	if (subworker.isSubMaster()) {
 	    Frontier->calculateNumOfNonZero(tid);	   	  	  	    
 	}
-	pthread_barrier_wait(global_barr);
+	//pthread_barrier_wait(global_barr);
 	subworker.globalWait();
 	gettimeofday(&endT, &tz);
 	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
@@ -383,6 +479,7 @@ void BFS(intT start, graph<vertex> &GA) {
     PR_Hash_F hasher(GA.n, numOfNode);
     graphAllEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
+    fullGraph = (void *)&GA;
     /*
     intT vertPerPage = PAGESIZE / sizeof(double);
     intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;

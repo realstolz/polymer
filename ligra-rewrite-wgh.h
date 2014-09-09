@@ -304,6 +304,30 @@ void graphInEdgeHasher(wghGraph<vertex> &GA, Hash_F hash) {
     free(V);
 }
 
+template <class vertex, class Hash_F>
+void graphAllEdgeHasher(wghGraph<vertex> &GA, Hash_F hash) {
+    vertex *V = GA.V;
+    vertex *newVertexSet = (vertex *)malloc(sizeof(vertex) * GA.n);
+
+    {parallel_for (intT i = 0; i < GA.n; i++) {
+	    intT d = V[i].getOutDegree();
+	    intE *outEdges = V[i].getOutNeighborPtr();
+	    for (intT j = 0; j < d; j++) {
+		outEdges[2*j] = hash.hashFunc(outEdges[2*j]);
+	    }
+	    
+	    d = V[i].getInDegree();	    
+	    intE *inEdges = V[i].getInNeighborPtr();
+	    for (intT j = 0; j < d; j++) {
+		inEdges[2*j] = hash.hashFunc(inEdges[j]);
+	    }
+	    newVertexSet[hash.hashFunc(i)] = V[i];	    
+	}
+    }
+    GA.V = newVertexSet;
+    free(V);
+}
+
 template <class vertex>
 wghGraph<vertex> graphFilter(wghGraph<vertex> &GA, int rangeLow, int rangeHi, bool useOutEdge=true) {
     vertex *V = GA.V;
@@ -360,6 +384,103 @@ wghGraph<vertex> graphFilter(wghGraph<vertex> &GA, int rangeLow, int rangeHi, bo
 		newVertexSet[i].setOutNeighbors(localEdges);
 	    else
 		newVertexSet[i].setInNeighbors(localEdges);
+	}
+    }
+    numa_free(offsets, sizeof(int) * GA.n);
+    //printf("degree: %d\n", newVertexSet[0].getFakeDegree());
+    return wghGraph<vertex>(newVertexSet, GA.n, GA.m);
+}
+
+template <class vertex>
+wghGraph<vertex> graphFilter2Direction(wghGraph<vertex> &GA, int rangeLow, int rangeHi, bool useOutEdge=true) {
+    vertex *V = GA.V;
+    vertex *newVertexSet = (vertex *)numa_alloc_local(sizeof(vertex) * GA.n);
+    int *counters = (int *)numa_alloc_local(sizeof(int) * GA.n);
+    int *offsets = (int *)numa_alloc_local(sizeof(int) * GA.n);
+    int *inCounters = (int *)numa_alloc_local(sizeof(int) * GA.n);
+    int *inOffsets = (int *)numa_alloc_local(sizeof(int) * GA.n);
+    {parallel_for (intT i = 0; i < GA.n; i++) {
+	    intT d = (useOutEdge) ? (V[i].getOutDegree()) : (V[i].getInDegree());
+	    //V[i].setFakeDegree(d);
+	    newVertexSet[i].setOutDegree(V[i].getOutDegree());
+	    newVertexSet[i].setInDegree(V[i].getInDegree());
+
+	    counters[i] = 0;
+	    for (intT j = 0; j < d; j++) {
+		intT ngh = V[i].getOutNeighbor(j);
+		if (rangeLow <= ngh && ngh < rangeHi)
+		    counters[i]++;
+	    }
+
+	    d = V[i].getInDegree();
+	    inCounters[i] = 0;
+	    for (intT j = 0; j < d; j++) {
+		intT ngh = V[i].getInNeighbor(j);
+		if (rangeLow <= ngh && ngh < rangeHi)
+		    inCounters[i]++;
+	    }
+	    newVertexSet[i].setFakeDegree(counters[i]);
+	    newVertexSet[i].setFakeInDegree(inCounters[i]);
+	}
+    }
+
+    long long totalSize = 0;
+    long long totalInSize = 0;
+    for (intT i = 0; i < GA.n; i++) {
+	offsets[i] = totalSize;
+	totalSize += counters[i];
+
+	inOffsets[i] = totalInSize;
+	totalInSize += inCounters[i];
+    }
+    printf("totalSize of %d: %d %ld\n", rangeLow, totalSize, totalSize * 2);
+    numa_free(counters, sizeof(int) * GA.n);
+    numa_free(inCounters, sizeof(int) * GA.n);
+
+    //intE *edges = (intE *)numa_alloc_local(sizeof(intE) * totalSize * 2);
+    intE *edges = (intE *)malloc((long long)sizeof(intE) * totalSize * (long long)2);
+    intE *inEdges = (intE *)malloc((long long)sizeof(intE) * totalInSize * (long long)2);
+
+    {parallel_for (intT i = 0; i < GA.n; i++) {
+	    intE *localEdges = &edges[offsets[i]*2];
+	    intT counter = 0;
+	    intT d = V[i].getOutDegree();
+	    for (intT j = 0; j < d; j++) {
+		intT ngh = V[i].getOutNeighbor(j);
+		intT wgh = V[i].getOutWeight(j);
+		if (rangeLow <= ngh && ngh < rangeHi) {
+		    localEdges[counter * 2] = ngh;
+		    localEdges[counter * 2 + 1] = wgh;
+		    counter++;
+		}
+	    }
+	    if (counter != newVertexSet[i].getFakeDegree()) {
+		printf("oops: %d %d\n", counter, newVertexSet[i].getFakeDegree());
+	    }
+
+	    intE *localInEdges = &inEdges[inOffsets[i]*2];
+	    counter = 0;
+	    d = V[i].getInDegree();
+	    for (intT j = 0; j < d; j++) {
+		intT ngh = V[i].getInNeighbor(j);
+		intT wgh = V[i].getInWeight(j);
+		if (rangeLow <= ngh && ngh < rangeHi) {
+		    localInEdges[counter * 2] = ngh;
+		    localInEdges[counter * 2 + 1] = wgh;
+		    counter++;
+		}
+	    }
+
+	    if (counter != newVertexSet[i].getFakeInDegree()) {
+		printf("oops: %d %d\n", counter, newVertexSet[i].getFakeInDegree());
+	    }
+
+	    if (i == 0) {
+		printf("fake deg: %d\n", newVertexSet[i].getFakeDegree());
+	    }
+
+	    newVertexSet[i].setOutNeighbors(localEdges);	    
+	    newVertexSet[i].setInNeighbors(localInEdges);
 	}
     }
     numa_free(offsets, sizeof(int) * GA.n);
@@ -479,6 +600,7 @@ struct vertices {
     int *numOfNonZero;
     bool** d;
     LocalFrontier **frontiers;
+    LocalFrontier **nextFrontiers;
     bool isDense;
     AsyncChunk **asyncQueue;
     int asyncEndSignal;
@@ -489,6 +611,7 @@ struct vertices {
 	this->numOfNodes = _numOfNodes;
 	d = (bool **)malloc(numOfNodes * sizeof(bool*));
 	frontiers = (LocalFrontier **)malloc(numOfNodes * sizeof(LocalFrontier*));
+	nextFrontiers = (LocalFrontier **)malloc(numOfNodes * sizeof(LocalFrontier*));
 	numOfVertexOnNode = (int *)malloc(numOfNodes * sizeof(int));
 	offsets = (int *)malloc((numOfNodes + 1) * sizeof(int));
 	numOfNonZero = (int *)malloc(numOfNodes * sizeof(int));
@@ -637,6 +760,11 @@ struct vertices {
 
     bool *getArr(int nodeNum) {
 	return frontiers[nodeNum]->b;
+    }
+
+    bool *getNextArr(int nodeNum) {
+	if (nextFrontiers[nodeNum] == NULL) return NULL;
+	return nextFrontiers[nodeNum]->b;
     }
 
     intT *getSparseArr(int nodeNum) {
@@ -792,6 +920,67 @@ bool* edgeMapDenseForward(wghGraph<vertex> GA, vertices *frontier, F f, LocalFro
     //writeAdd(&(next->m), m);
     //writeAdd(&(next->outEdgesCount), outEdgesCount);
     //printf("edgeMap: %d %d\n", m, outEdgesCount);
+    return NULL;
+}
+
+template <class F, class vertex>
+bool* edgeMapDenseReduce(wghGraph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
+    intT numVertices = GA.n;
+    intT size = next->endID - next->startID;
+    vertex *G = GA.V;
+
+    if (subworker.isSubMaster()) {
+	frontier->nextFrontiers[subworker.tid] = next;
+    }
+
+    //subworker.globalWait();
+    pthread_barrier_wait(subworker.global_barr);
+
+    int localOffset = next->startID;
+    bool *localBitVec = frontier->getArr(subworker.tid);
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getNextArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
+    intT startPos = subworker.dense_start;
+    intT endPos = subworker.dense_end;
+
+    while (startPos >= nextSwitchPoint) {
+	currOffset += frontier->getSize(currNodeNum);
+	nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	currNodeNum++;
+	currBitVector = frontier->getNextArr(currNodeNum);
+    }
+
+    for (intT i = startPos; i < endPos; i++){
+	//next->setBit(i, false);
+	if (i >= nextSwitchPoint) {
+	    currOffset += frontier->getSize(currNodeNum);
+	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	    currNodeNum++;
+	    currBitVector = frontier->getNextArr(currNodeNum);
+	}
+	if (true || f.cond(i)) { 
+	    double data[2];
+	    intT d = G[i].getFakeInDegree();
+	    f.initFunc((void *)data);
+	    bool shouldActive = false;
+	    for(intT j=0; j<d; j++){
+		intT ngh = G[i].getInNeighbor(j);
+		if (/*localBitVec[ngh - localOffset] && */f.reduceFunc((void *)data, ngh, G[i].getInWeight(j))) {
+		    currBitVector[i - currOffset] = true;
+		    //shouldActive = true;
+		}
+		//if(!f.cond(i)) break;
+		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
+	    }
+	    if (d > 0) {
+		f.combineFunc((void *)data, i);
+	    }
+	}
+    }
     return NULL;
 }
 

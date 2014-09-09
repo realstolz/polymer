@@ -450,6 +450,7 @@ graph<vertex> graphFilter2Direction(graph<vertex> &GA, int rangeLow, int rangeHi
 
     intE *edges = (intE *)numa_alloc_local(sizeof(intE) * totalSize);
     intE *inEdges = (intE *)numa_alloc_local(sizeof(intE) * totalInSize);
+    printf("totalInSize is %d\n", totalInSize);
 
     {parallel_for (intT i = 0; i < GA.n; i++) {
 	    intE *localEdges = &edges[offsets[i]];
@@ -922,18 +923,41 @@ bool* edgeMapDense(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *nex
     intT numVertices = GA.n;
     intT size = next->endID - next->startID;
     vertex *G = GA.V;
+
+    if (subworker.isSubMaster()) {
+	frontier->nextFrontiers[subworker.tid] = next;
+    }
+
+    subworker.globalWait();
+    int localOffset = next->startID;
+    bool *localBitVec = frontier->getArr(subworker.tid);
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getNextArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
     intT startPos = subworker.dense_start;
     intT endPos = subworker.dense_end;
-    bool *bitVec = frontier->getArr(subworker.tid);
+
+    while (startPos >= nextSwitchPoint) {
+	currOffset += frontier->getSize(currNodeNum);
+	nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	currNodeNum++;
+	currBitVector = frontier->getArr(currNodeNum);
+    }
+
     for (intT i = startPos; i < endPos; i++){
-	next->setBit(i, false);
-	if (f.cond(i) && bitVec[i - next->startID]) { 
-	    intT d = G[i].getInDegree();
+	//next->setBit(i, false);
+	if (f.cond(i)) { 
+	    intT d = G[i].getFakeInDegree();
 	    for(intT j=0; j<d; j++){
 		intT ngh = G[i].getInNeighbor(j);
-		if (f.update(ngh,i)) next->setBit(i, true);
+		if (localBitVec[ngh - localOffset] && f.updateAtomic(ngh,i)) {
+		    currBitVector[i - currOffset] = true;
+		}
 		if(!f.cond(i)) break;
-		__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
+		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
 	    }
 	}
     }
@@ -1067,11 +1091,70 @@ bool* edgeMapDenseForwardDynamic(graph<vertex> GA, vertices *frontier, F f, Loca
 }
 
 template <class F, class vertex>
+bool* edgeMapDenseReduce(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
+    intT numVertices = GA.n;
+    intT size = next->endID - next->startID;
+    vertex *G = GA.V;
+
+    if (subworker.isSubMaster()) {
+	frontier->nextFrontiers[subworker.tid] = next;
+    }
+
+    subworker.globalWait();
+    int localOffset = next->startID;
+    bool *localBitVec = frontier->getArr(subworker.tid);
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getNextArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
+    intT startPos = subworker.dense_start;
+    intT endPos = subworker.dense_end;
+
+    while (startPos >= nextSwitchPoint) {
+	currOffset += frontier->getSize(currNodeNum);
+	nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	currNodeNum++;
+	currBitVector = frontier->getNextArr(currNodeNum);
+    }
+
+    for (intT i = startPos; i < endPos; i++){
+	//next->setBit(i, false);
+	if (i >= nextSwitchPoint) {
+	    currOffset += frontier->getSize(currNodeNum);
+	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	    currNodeNum++;
+	    currBitVector = frontier->getNextArr(currNodeNum);
+	}
+	if (f.cond(i)) { 
+	    double data[2];
+	    intT d = G[i].getFakeInDegree();
+	    f.initFunc((void *)data);
+	    bool shouldActive = false;
+	    for(intT j=0; j<d; j++){
+		intT ngh = G[i].getInNeighbor(j);
+		if (localBitVec[ngh - localOffset] && f.reduceFunc((void *)data, ngh)) {
+		    currBitVector[i - currOffset] = true;
+		    //shouldActive = true;
+		}
+		if(!f.cond(i)) break;
+		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
+	    }
+	    if (d > 0) {
+		f.combineFunc((void *)data, i);
+	    }
+	}
+    }
+    return NULL;
+}
+
+template <class F, class vertex>
 bool* edgeMapDenseDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=NULL) {
     intT numVertices = GA.n;
     vertex *G = GA.V;
     if (subworker.isMaster()) {
-	printf("we are here\n");
+	//printf("we are here\n");
     }
 
     if (subworker.isSubMaster()) {
@@ -1092,7 +1175,7 @@ bool* edgeMapDenseDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     bool *nextB = next->b;
 
     intT chunkSize = numVertices / frontier->numOfNodes;
-    intT rollingOffset = subworker.tid * chunkSize;
+    intT rollingOffset = 0;//subworker.tid * chunkSize;
 
     intT *counterPtr = &(next->sparseCounter);
 
@@ -1112,7 +1195,7 @@ bool* edgeMapDenseDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFronti
 		currNodeNum = 0;
 		currOffset = 0;
 		nextSwitchPoint = frontier->getSize(0) + numVertices;
-		printf("switch back\n");
+		//printf("switch back\n");
 	    } else {
 		currBitVector = frontier->getNextArr(currNodeNum);
 	    }
@@ -1127,14 +1210,15 @@ bool* edgeMapDenseDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFronti
 		    currNodeNum = 0;
 		    currOffset = 0;
 		    nextSwitchPoint = frontier->getSize(0) + numVertices;
-		    printf("switch back\n");
+		    //printf("switch back\n");
 		} else {
 		    currBitVector = frontier->getNextArr(currNodeNum);
 		}
 	    }
-	    m += G[idx].getFakeDegree();
+	    m += G[idx].getFakeInDegree();
 	    if (f.cond(idx)) {
 		intT d = G[idx].getFakeInDegree();
+		//printf("in deg of %d: %d\n", idx, d);
 		for(intT j=0; j<d; j++){
 		    uintT ngh = G[idx].getInNeighbor(j);
 		    if (localBitVec[ngh-localOffset] && f.updateAtomic(ngh, idx)) {
@@ -2147,7 +2231,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     intT m = V->numNonzeros() + V->getEdgeStat();
     
     if (subworker.isMaster()) {
-	printf("%d %d\n", V->numNonzeros(), threshold);
+	//printf("%d %d\n", V->numNonzeros(), threshold);
     }
     
     /*
@@ -2176,8 +2260,8 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	bool* R = (option == DENSE_FORWARD) ? 
 	    edgeMapDenseForward(GA, V, f, next, part, start, end) :
 	    //edgeMapDenseForwardDynamic(GA, V, f, next, subworker) : 
-	    //edgeMapDense(GA, V, f, next, option, subworker);
-	    edgeMapDenseDynamic(GA, V, f, next, subworker);
+	    edgeMapDense(GA, V, f, next, option, subworker);
+            //edgeMapDenseDynamic(GA, V, f, next, subworker);
 	next->isDense = true;
     } else {
 	//Sparse part

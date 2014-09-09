@@ -28,6 +28,10 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <numa.h>
+
+#include <papi.h>
+#define NUM_EVENTS 3
+
 using namespace std;
 
 #define PAGE_SIZE (4096)
@@ -72,6 +76,7 @@ struct PR_F {
     }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
 	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
+	//return (p_curr[s] / V[s].getOutDegree()) >= 0;
 	/*
 	if (d == 110101) {
 	    cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << p_curr[s]/V[s].getOutDegree() << " -- " << p_next[d] << "\n";
@@ -79,7 +84,31 @@ struct PR_F {
 	*/
 	return 1;
     }
-    inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
+
+    inline void initFunc(void *dataPtr) {
+	*(double *)dataPtr = 0.0;
+    }
+
+    inline bool reduceFunc(void *dataPtr, intT s, bool print_info=false) {
+	*(double *)dataPtr += p_curr[s] / (double)V[s].getOutDegree();
+	if (print_info) {
+	    //cout << "reduce: " << s << " " << std::scientific << std::setprecision(9) << p_curr[s] / (double)V[s].getOutDegree() << " " << p_curr[s] << " " << V[s].getOutDegree() << *(double *)dataPtr << "\n";
+	}
+	return true;
+    }
+
+    inline bool combineFunc(void *dataPtr, intT d) {
+	double val = *(double *)dataPtr;
+	writeAdd((double *)&p_next[d], val);
+	/*
+	if (d == 77) {
+	    cout << "combine result: " << std::scientific << std::setprecision(9) << val << " " << p_next[d] << "\n";
+	}
+	*/
+	return true;
+    }
+
+    inline bool cond (intT d) { return true; } //does nothing
 };
 
 //vertex map function to update its p value according to PageRank equation
@@ -175,6 +204,7 @@ void *PageRankSubWorker(void *arg) {
 
     pthread_barrier_wait(local_barr);
     pthread_barrier_wait(&global_barr);
+
     while(1) {
 	if (maxIter > 0 && currIter >= maxIter)
             break;
@@ -188,7 +218,11 @@ void *PageRankSubWorker(void *arg) {
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
 
-        edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
+        //edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
+	clearLocalFrontier(output, subworker.tid, subworker.subTid, subworker.numOfSub);
+	subworker.globalWait();
+	edgeMapDenseReduce(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,false,subworker);
+	output->isDense = true;
 
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
@@ -216,6 +250,7 @@ void *PageRankSubWorker(void *arg) {
 	}
 	//pthread_barrier_wait(local_barr);
     }
+
     if (subworker.isMaster()) {
 	p_ans = p_curr;
     }
@@ -250,7 +285,8 @@ void *PageRankThread(void *arg) {
     }
     printf("%d : degree count: %d\n", tid, degreeSum);
     
-    graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    //graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
 
     int sizeOfShards[CORES_PER_NODE];    
 
@@ -432,7 +468,8 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
-    graphHasher(GA, hasher);
+    //graphHasher(GA, hasher);
+    //graphAllEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
     /*
     intT vertPerPage = PAGESIZE / sizeof(double);
@@ -472,6 +509,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
 	pthread_create(&tids[i], NULL, PageRankThread<vertex>, (void *)arg);
     }
     shouldStart = 1;
+
     pthread_barrier_wait(&timerBarr);
     //nextTime("Graph Partition");
     nextTime("partition over");
@@ -480,9 +518,11 @@ void PageRank(graph<vertex> &GA, int maxIter) {
 	pthread_join(tids[i], NULL);
     }
     nextTime("PageRank");
+
     if (needResult) {
 	for (intT i = 0; i < GA.n; i++) {
-	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
+	    //cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
+	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[i] << "\n";
 	}
     }
 }

@@ -24,6 +24,10 @@
 #include "ligra.h"
 #include "gettime.h"
 #include "math.h"
+
+#include <papi.h>
+#define NUM_EVENTS 3
+
 using namespace std;
 
 bool needResult = false;
@@ -36,15 +40,15 @@ struct PR_F {
     p_curr(_p_curr), p_next(_p_next), V(_V) {}
   inline bool update(intT s, intT d){ //update function applies PageRank equation
     p_next[d] += p_curr[s]/V[s].getOutDegree();
+    
     return 1;
   }
   inline bool updateAtomic (intT s, intT d) { //atomic Update
     writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
-    /*
-    if (d == 0) {
-	cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << p_curr[s]/V[s].getOutDegree() << " -- " << p_next[d] << "\n";
+
+    if (d == 77) {
+	cout << "Update from " << s << "\t" << std::scientific << std::setprecision(9) << p_curr[s]/V[s].getOutDegree() << " " << p_curr[s] << " " << V[s].getOutDegree() << " -- " << p_next[d] << "\n";
     }
-    */
     return 1;
   }
   inline bool cond (intT d) { return 1; } //does nothing
@@ -60,6 +64,9 @@ struct PR_Vertex_F {
     p_curr(_p_curr), p_next(_p_next), 
     damping(_damping), addedConstant((1-_damping)*(1/(double)n)){}
   inline bool operator () (intT i) {
+	if (i == 39) {
+	    //cout << "vertex func: " << std::scientific << std::setprecision(9) << damping*p_next[i] + addedConstant << " " << p_next[i] << "\n";
+	}
     p_next[i] = damping*p_next[i] + addedConstant;
     return 1;
   }
@@ -99,6 +106,8 @@ void PageRank(graph<vertex> GA, int maxIter = -1) {
   vertices Frontier(n,n,frontier);
   nextTime("Init");
   intT round = 0;
+
+
   while(1){
     if (maxIter > 0 && round >= maxIter)
       break;
@@ -147,6 +156,7 @@ void PageRank(graph<vertex> GA, int maxIter = -1) {
   cout<<"Finished in "<<round<<" iterations\n";
   Frontier.del();
   nextTime("PageRank");
+
 
   if (needResult) {
       for (intT i = 0; i < GA.n; i++) {

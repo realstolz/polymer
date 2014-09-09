@@ -76,7 +76,22 @@ struct SPMV_F {
 	*/
 	return 1;
     }
-    inline bool cond (intT d) { return (rangeLow <= d && d < rangeHi); } //does nothing
+
+    inline void initFunc(void *dataPtr) {
+	*(double *)dataPtr = 0.0;
+    }
+    
+    inline bool reduceFunc(void *dataPtr, intT s, intT edgeW) {
+	*(double *)dataPtr += p_curr[s] * edgeW;
+	return true;
+    }
+
+    inline bool combineFunc(void *dataPtr, intT d) {
+	writeAdd(&p_next[d], *(double *)dataPtr);
+	return true;
+    }
+
+    inline bool cond (intT d) { return true; } //does nothing
 };
 
 //resets p
@@ -157,9 +172,9 @@ void *SPMVSubWorker(void *arg) {
 	}
 	
 	pthread_barrier_wait(&global_barr);
-	//pthread_barrier_wait(local_barr);
 	//edgeMapDenseForward(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, true, start, end);
-	edgeMapDenseForwardDynamic(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, subworker);
+	//edgeMapDenseForwardDynamic(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, subworker);
+	edgeMapDenseReduce(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi),output,false,subworker);
         //edgeMap(GA, All, SPMV_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
 
 	pthread_barrier_wait(&global_barr);
@@ -198,7 +213,8 @@ void *SPMVThread(void *arg) {
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
     printf("%d before partition\n", tid);
-    wghGraph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    //wghGraph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    wghGraph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
     printf("%d after partition\n", tid);
 
     int sizeOfShards[CORES_PER_NODE];

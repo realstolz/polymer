@@ -33,7 +33,7 @@ COMMON= ligra.h ligra-rewrite.h ligra-rewrite-wgh.h graph.h utils.h IO.h paralle
 
 ALL= BFS BC Components Radii PageRank PageRankDelta BellmanFord PageRank-Pull 
 
-MYAPPS= DegreeCount SPMV BP numa-BP numa-PageRank numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-SPMV numa-BellmanFord ConvertToJSON
+MYAPPS= DegreeCount SPMV BP numa-BP numa-PageRank numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-BFS-async-pipe numa-SPMV numa-BellmanFord ConvertToJSON ConvertTmp
 MYHEADER= ligra-rewrite.h ligra-numa.h
 LIBS_I_NEED= -pthread -lnuma
 

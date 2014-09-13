@@ -1,6 +1,15 @@
 
-all:
-	g++ -o read_bench two-thread-read.cc -pthread -lnuma
-	g++ -o write_bench two-thread-write.cc -pthread -lnuma
-	g++ -o rw-cycle-bench rw-cycle-bench.cc -pthread -lnuma
-	g++ -o barrier-bench barrier-bench.cc -pthread -lnuma
+CC = g++
+
+LIBS = -pthread -lnuma
+BENCHMARKS = two-thread-read two-thread-write rw-cycle-bench barrier-bench test-prefetch
+
+all: $(BENCHMARKS)
+
+% : %.cc
+	$(CC) -o $@ $< $(LIBS)
+
+.PHONY: clean
+
+clean:
+	rm -f *.o $(BENCHMARKS)

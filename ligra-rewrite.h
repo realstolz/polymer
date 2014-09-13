@@ -734,8 +734,8 @@ struct vertices {
 	}
     }
 
-    intT getEdgeStat() {
-	intT sum = 0;
+    long long getEdgeStat() {
+	long long sum = 0;
 	for (int i = 0; i < numOfNodes; i++) {
 	    sum = sum + frontiers[i]->outEdgesCount;
 	}
@@ -1024,6 +1024,7 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
     //writeAdd(&(next->m), m);
     //writeAdd(&(next->outEdgesCount), outEdgesCount);
     //printf("edgeMap: %d %d\n", m, outEdgesCount);
+
     return NULL;
 }
 
@@ -1101,6 +1102,11 @@ bool* edgeMapDenseReduce(graph<vertex> GA, vertices* frontier, F f, LocalFrontie
     }
 
     subworker.globalWait();
+    
+    struct timeval startT, endT;
+    struct timezone tz = {0, 0};
+    gettimeofday(&startT, &tz);
+    
     int localOffset = next->startID;
     bool *localBitVec = frontier->getArr(subworker.tid);
     int currNodeNum = 0;
@@ -1130,7 +1136,7 @@ bool* edgeMapDenseReduce(graph<vertex> GA, vertices* frontier, F f, LocalFrontie
 	if (f.cond(i)) { 
 	    double data[2];
 	    intT d = G[i].getFakeInDegree();
-	    f.initFunc((void *)data);
+	    f.initFunc((void *)data, i);
 	    bool shouldActive = false;
 	    for(intT j=0; j<d; j++){
 		intT ngh = G[i].getInNeighbor(j);
@@ -1145,6 +1151,15 @@ bool* edgeMapDenseReduce(graph<vertex> GA, vertices* frontier, F f, LocalFrontie
 		f.combineFunc((void *)data, i);
 	    }
 	}
+    }
+
+    subworker.localWait();
+    gettimeofday(&endT, &tz);
+    if (subworker.isSubMaster()) {
+	double time1 = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+	double time2 = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+	double duration = time2 - time1;
+	//printf("time of %d: %lf\n", subworker.tid, duration);
     }
     return NULL;
 }
@@ -2228,7 +2243,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    
-    intT m = V->numNonzeros() + V->getEdgeStat();
+    long long m = (long long)V->numNonzeros() + V->getEdgeStat();
     
     if (subworker.isMaster()) {
 	//printf("%d %d\n", V->numNonzeros(), threshold);
@@ -2244,7 +2259,7 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
     if (m >= threshold) {       
 	//Dense part	
 	if (subworker.isMaster()) {
-	    printf("Dense: %d %d\n", V->numNonzeros(), m);
+	    printf("Dense: %d\n", m);
 	    V->toDense();
 	}
 
@@ -2260,8 +2275,8 @@ void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT thres
 	bool* R = (option == DENSE_FORWARD) ? 
 	    edgeMapDenseForward(GA, V, f, next, part, start, end) :
 	    //edgeMapDenseForwardDynamic(GA, V, f, next, subworker) : 
-	    edgeMapDense(GA, V, f, next, option, subworker);
-            //edgeMapDenseDynamic(GA, V, f, next, subworker);
+	    //edgeMapDense(GA, V, f, next, option, subworker);
+            edgeMapDenseDynamic(GA, V, f, next, subworker);
 	next->isDense = true;
     } else {
 	//Sparse part

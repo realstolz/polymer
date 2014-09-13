@@ -177,7 +177,7 @@ void *BFSubWorker(void *arg) {
 	struct timeval startT, endT;
 	struct timezone tz = {0, 0};
 	gettimeofday(&startT, &tz);
-	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, 0, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.m/20, DENSE_FORWARD, false, true, subworker);
 	//pthread_barrier_wait(&global_barr);
 	subworker.globalWait();
         vertexMap(Frontier, BF_Vertex_F(Visited), tid, subTid, CORES_PER_NODE);
@@ -205,7 +205,7 @@ void *BFSubWorker(void *arg) {
 	}
 	//pthread_barrier_wait(&global_barr);
 	subworker.globalWait();
-	break;
+	//break;
     }
 
     if (tid + subTid == 0) {
@@ -394,16 +394,16 @@ void BF_main(wghGraph<vertex> &GA, intT start) {
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     BF_Hash_F hasher(GA.n, numOfNode);
-    //graphHasher(GA, hasher);
-    //partitionByDegree(GA, numOfNode, sizeArr, sizeof(int));
-
+    graphHasher(GA, hasher);
+    partitionByDegree(GA, numOfNode, sizeArr, sizeof(int));
+    /*
     intT vertPerPage = PAGESIZE / sizeof(double);
     intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
     for (int i = 0; i < numOfNode - 1; i++) {
 	sizeArr[i] = subShardSize;
     }
     sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
-    
+    */
     ShortestPathLen_global = (int *)mapDataArray(numOfNode, sizeArr, sizeof(int));
     Visited_global = (int *)mapDataArray(numOfNode, sizeArr, sizeof(int));
 

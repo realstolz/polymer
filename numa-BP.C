@@ -48,6 +48,8 @@ pthread_mutex_t mut;
 volatile int global_counter = 0;
 volatile int global_toggle = 0;
 
+void *graph_full;
+
 vertices *Frontier;
 
 #define NSTATES 2
@@ -91,8 +93,9 @@ struct BP_F {
     VertexData *vertD_curr;
     VertexData *vertD_next;
     intT *offsets;
-    BP_F(EdgeWeight *_edgeW, EdgeData *_edgeD_curr, EdgeData *_edgeD_next, VertexInfo *_vertI, VertexData *_vertD_curr, VertexData *_vertD_next, intT *_offsets) : 
-	edgeW(_edgeW), edgeD_curr(_edgeD_curr), edgeD_next(_edgeD_next), vertI(_vertI), vertD_curr(_vertD_curr), vertD_next(_vertD_next), offsets(_offsets) {}
+    intT rangeLow;
+    BP_F(EdgeWeight *_edgeW, EdgeData *_edgeD_curr, EdgeData *_edgeD_next, VertexInfo *_vertI, VertexData *_vertD_curr, VertexData *_vertD_next, intT *_offsets, intT _rangeLow=0) : 
+	edgeW(_edgeW), edgeD_curr(_edgeD_curr), edgeD_next(_edgeD_next), vertI(_vertI), vertD_curr(_vertD_curr), vertD_next(_vertD_next), offsets(_offsets),rangeLow(_rangeLow) {}
     inline bool update(intT s, intT d, intT edgeIdx){
 	intT dstIdx = offsets[s] + edgeIdx;
 	for (int i = 0; i < NSTATES; i++) {
@@ -106,14 +109,15 @@ struct BP_F {
     }
     inline bool updateAtomic (intT s, intT d, intT edgeIdx) { //atomic Update
 	//printf("we are here: %d\n", s);
-	intT dstIdx = offsets[s] + edgeIdx;
+	intT dstIdx = offsets[s-rangeLow] + edgeIdx;
 	//printf("idx: %d\n", dstIdx);
 	for (int i = 0; i < NSTATES; i++) {
 	    edgeD_next[dstIdx].belief[i] = 0.0;
 	    for (int j = 0; j < NSTATES; j++) {
 		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];
 	    }
-	    writeMult(&(vertD_next[d].product[i]), edgeD_next[dstIdx].belief[i]);
+	    //writeMult(&(vertD_next[d].product[i]), edgeD_next[dstIdx].belief[i]);
+	    vertD_next[d].product[i] = vertD_next[d].product[i] * edgeD_next[dstIdx].belief[i];
 	}
 	return 1;
     }
@@ -167,7 +171,61 @@ struct BP_subworker_arg {
     EdgeData *edgeD_curr;
     EdgeData *edgeD_next;
     intT *localOffsets;
+    intT *localOffsets2;
 };
+
+template <class F, class vertex>
+bool* edgeMapDenseBPNoRep(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker=NULL) {
+    intT numVertices = GA.n;
+    vertex *G = GA.V;
+
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
+    intT m = 0;
+    intT outEdgesCount = 0;
+    bool *nextB = next->b;
+    
+    int size = frontier->getSize(subworker.tid);
+    int subSize = size / CORES_PER_NODE;
+    intT startPos = subSize * subworker.subTid;
+    intT endPos = subSize * (subworker.subTid + 1);
+    if (subworker.subTid == CORES_PER_NODE - 1) {
+	endPos = size;
+    }
+
+    intT low = frontier->getFrontier(subworker.tid)->startID;
+    startPos += low;
+    endPos += low;
+
+    currNodeNum = frontier->getNodeNumOfIndex(startPos);
+    currBitVector = frontier->getArr(currNodeNum);
+    nextSwitchPoint = frontier->getOffset(currNodeNum+1);
+    currOffset = frontier->getOffset(currNodeNum);
+
+    for (long i=startPos; i<endPos; i++){
+	if (i == nextSwitchPoint) {
+	    currOffset += frontier->getSize(currNodeNum);
+	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	    currNodeNum++;
+	    currBitVector = frontier->getArr(currNodeNum);
+	}
+	m += G[i].getOutDegree();
+	if (currBitVector[i-currOffset]) {
+	    intT d = G[i].getFakeDegree();
+	    for(intT j=0; j<d; j++){
+		uintT ngh = G[i].getOutNeighbor(j);
+		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh,j)) {
+		    next->setBit(ngh, true);
+		}
+	    }
+	}
+    }
+    return NULL;
+}
 
 template <class vertex>
 void *BeliefPropagationSubWorker(void *arg) {
@@ -196,6 +254,8 @@ void *BeliefPropagationSubWorker(void *arg) {
     EdgeData *edgeD_next = my_arg->edgeD_next;
 
     intT *localOffsets = my_arg->localOffsets;
+    intT *localOffsets2 = my_arg->localOffsets2;
+    graph<vertex> &Global_G = *(graph<vertex> *)graph_full;
 
     Custom_barrier globalCustom(&global_counter, &global_toggle, Frontier->numOfNodes);
     Custom_barrier localCustom(my_arg->barr_counter, my_arg->toggle, CORES_PER_NODE);
@@ -233,6 +293,7 @@ void *BeliefPropagationSubWorker(void *arg) {
 	pthread_barrier_wait(&global_barr);	
 
         edgeMapDenseBP(GA, Frontier, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, localOffsets),output,true,start,end);
+        //edgeMapDenseBPNoRep(GA, Frontier, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, localOffsets2,rangeLow),output,true,subworker);
 
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
@@ -290,13 +351,50 @@ void *BeliefPropagationThread(void *arg) {
 	localOffsets[i] = localOffsets[i-1] + fakeDegrees[i-1];
     }
 
-    intT numLocalEdge = localOffsets[localGraph.n - 1];
+    intT *localDegrees = (intT *)numa_alloc_local(sizeof(intT) * localGraph.n);
+    intT *localOffsets2 = (intT *)numa_alloc_local(sizeof(intT) * localGraph.n);
+
+    {parallel_for (intT i = rangeLow; i < rangeHi; i++) {
+	    localDegrees[i-rangeLow] = GA.V[i].getOutDegree();
+	}
+    }
+
+    localOffsets2[0] = 0;
+    for (intT i = 1; i < (rangeHi - rangeLow); i++) {
+	localOffsets2[i] = localOffsets2[i-1] + localDegrees[i-1];
+    }
+
+    intT numLocalEdge = localOffsets2[rangeHi - rangeLow - 1] + localDegrees[rangeHi - rangeLow - 1];
+    printf ("numLocalEdge of %d: %d\n", tid, numLocalEdge);
 
     EdgeWeight *edgeW = (EdgeWeight *)numa_alloc_local(sizeof(EdgeWeight) * numLocalEdge);
     
     EdgeData *edgeD_curr = (EdgeData *)numa_alloc_local(sizeof(EdgeData) * numLocalEdge);
     EdgeData *edgeD_next = (EdgeData *)numa_alloc_local(sizeof(EdgeData) * numLocalEdge);
-
+    /*
+    {parallel_for (intT i = 0; i < n; i++) {
+	    intT o = offsets[i];
+	    intT d = degrees[i];
+	    vertex vert = GA.V[i];
+	    for (intT j = 0; j < d; j++) {
+		intT ngh = vert.getOutNeighbor(j);
+		int idx = -1;
+		intT ngh_d = GA.V[ngh].getOutDegree();
+		vertex ngh_vert = GA.V[ngh];
+		for (intT k = 0; k < ngh_d; k++) {
+		    if (ngh_vert.getOutNeighbor(k) == i) {
+			idx = k;
+			break;
+		    }
+		}
+		if (idx == -1) {
+		    idx = 0;
+		}
+		edgeW[o + j].transposeOffset = offsets[ngh] + idx;
+	    }
+	}
+    }
+    */
     int sizeOfShards[CORES_PER_NODE];
 
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(VertexData), true, true);
@@ -387,6 +485,7 @@ void *BeliefPropagationThread(void *arg) {
 	arg->vertD_curr = my_arg->vertD_curr;
 	arg->vertD_next = my_arg->vertD_next;
 	arg->localOffsets = localOffsets;
+	arg->localOffsets2 = localOffsets2;
 	startPos = arg->endPos;
         pthread_create(&subTids[i], NULL, BeliefPropagationSubWorker<vertex>, (void *)arg);
     }
@@ -439,16 +538,17 @@ void BeliefPropagation(graph<vertex> &GA, int maxIter) {
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     BP_Hash_F hasher(GA.n, numOfNode);
-    //graphHasher(GA, hasher);
-    //partitionByDegree(GA, numOfNode, sizeArr, sizeof(VertexData));
-
+    graphHasher(GA, hasher);
+    partitionByDegree(GA, numOfNode, sizeArr, sizeof(VertexData));
+    graph_full = (void *)&GA;
+    /*
     intT vertPerPage = PAGESIZE / sizeof(double);
     intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
     for (int i = 0; i < numOfNode - 1; i++) {
 	sizeArr[i] = subShardSize;
     }
     sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
-    
+    */
     VertexInfo *vertI = (VertexInfo *)malloc(sizeof(VertexInfo) * GA.n);
     VertexData *vertD_curr = (VertexData *)mapDataArray(numOfNode, sizeArr, sizeof(VertexData));
     VertexData *vertD_next = (VertexData *)mapDataArray(numOfNode, sizeArr, sizeof(VertexData));

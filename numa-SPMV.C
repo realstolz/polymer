@@ -77,7 +77,7 @@ struct SPMV_F {
 	return 1;
     }
 
-    inline void initFunc(void *dataPtr) {
+    inline void initFunc(void *dataPtr, intT d) {
 	*(double *)dataPtr = 0.0;
     }
     
@@ -172,9 +172,9 @@ void *SPMVSubWorker(void *arg) {
 	}
 	
 	pthread_barrier_wait(&global_barr);
-	//edgeMapDenseForward(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, true, start, end);
+	edgeMapDenseForward(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, true, start, end);
 	//edgeMapDenseForwardDynamic(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi), output, subworker);
-	edgeMapDenseReduce(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi),output,false,subworker);
+	//edgeMapDenseReduce(GA, All, SPMV_F<vertex>(p_curr, p_next, GA.V, rangeLow, rangeHi),output,false,subworker);
         //edgeMap(GA, All, SPMV_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
 
 	pthread_barrier_wait(&global_barr);
@@ -355,16 +355,16 @@ void SPMV_main(wghGraph<vertex> &GA, int maxIter) {
     pthread_mutex_init(&mut, NULL);
     int sizeArr[numOfNode];
     SPMV_Hash_F hasher(GA.n, numOfNode);
-    //graphHasher(GA, hasher);
-    //partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
-    
+    graphHasher(GA, hasher);
+    partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
+    /*
     intT vertPerPage = PAGESIZE / sizeof(double);
     intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
     for (int i = 0; i < numOfNode - 1; i++) {
 	sizeArr[i] = subShardSize;
     }
     sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
-    
+    */
     p_curr_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
     p_next_global = (double *)mapDataArray(numOfNode, sizeArr, sizeof(double));
 

@@ -32,6 +32,7 @@ bool needResult = false;
 
 struct EdgeWeight {
     float potential[NSTATES][NSTATES];
+    intT transposeOffset;
 };
 
 struct EdgeData {
@@ -73,10 +74,11 @@ struct BP_F {
 	edgeW(_edgeW), edgeD_curr(_edgeD_curr), edgeD_next(_edgeD_next), vertI(_vertI), vertD_curr(_vertD_curr), vertD_next(_vertD_next), offsets(_offsets) {}
     inline bool update(intT s, intT d, intT edgeIdx){
 	intT dstIdx = offsets[s] + edgeIdx;
+	intT inIdx = edgeW[dstIdx].transposeOffset;
 	for (int i = 0; i < NSTATES; i++) {
 	    edgeD_next[dstIdx].belief[i] = 0.0;
 	    for (int j = 0; j < NSTATES; j++) {
-		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];
+		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];// / edgeD_curr[inIdx].belief[j];
 	    }
 	    vertD_next[d].product[i] = vertD_next[d].product[i] * edgeD_next[dstIdx].belief[i];
 	}
@@ -86,10 +88,11 @@ struct BP_F {
 	//printf("we are here: %d\n", s);
 	intT dstIdx = offsets[s] + edgeIdx;
 	//printf("idx: %d\n", dstIdx);
+	intT inIdx = edgeW[dstIdx].transposeOffset;
 	for (int i = 0; i < NSTATES; i++) {
 	    edgeD_next[dstIdx].belief[i] = 0.0;
 	    for (int j = 0; j < NSTATES; j++) {
-		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];
+		edgeD_next[dstIdx].belief[i] += vertI[d].potential[j] * edgeW[dstIdx].potential[i][j] * vertD_curr[d].product[j];// / edgeD_curr[inIdx].belief[j];
 	    }
 	    writeMult(&(vertD_next[d].product[i]), edgeD_next[dstIdx].belief[i]);
 	}
@@ -187,8 +190,12 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
 	offsets[i] = offsets[i-1] + degrees[i-1];
     }
 
+    EdgeWeight *edgeW = (EdgeWeight *)malloc(sizeof(EdgeWeight) * GA.m);
+    EdgeData *edgeD_curr = (EdgeData *)malloc(sizeof(EdgeData) * GA.m);
+    EdgeData *edgeD_next = (EdgeData *)malloc(sizeof(EdgeData) * GA.m);
+
     printf("%d %d %d\n", n, offsets[n-1] + degrees[n-1], GA.m);
-    /*
+    
     {parallel_for (intT i = 0; i < n; i++) {
 	    intT o = offsets[i];
 	    intT d = degrees[i];
@@ -205,21 +212,19 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
 		    }
 		}
 		if (idx == -1) {
-		    printf("not symmetric\n");
+		    idx = 0;
 		}
+		edgeW[o + j].transposeOffset = offsets[ngh] + idx;
 	    }
 	}
     }
-    */
+    
     printf("check over\n");
-  
-    EdgeWeight *edgeW = (EdgeWeight *)malloc(sizeof(EdgeWeight) * GA.m);
-    EdgeData *edgeD_curr = (EdgeData *)malloc(sizeof(EdgeData) * GA.m);
-    EdgeData *edgeD_next = (EdgeData *)malloc(sizeof(EdgeData) * GA.m);
+
     {parallel_for (intT i = 0; i < GA.m; i++) {
 	    for (int j = 0; j < NSTATES; j++) {
 		for (int k = 0; k < NSTATES; k++) {
-		    edgeW[i].potential[j][k] = rand() % 10000 / 20000.0;
+		    edgeW[i].potential[j][k] = (i + j - k * j) % 10000 / 20000.0;
 		}
 		edgeD_curr[i].belief[j] = 0.5;
 	    }
@@ -261,6 +266,7 @@ void BeliefPropagation(graph<vertex> GA, int maxIter = -1) {
 
 	vertexMap(Frontier,BP_Vertex_Reset(vertD_next));
 	edgeMapDenseBP(GA, Frontier.d, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, offsets));
+	printf("size: %d\n", Frontier.m);
 	swap(edgeD_curr, edgeD_next);
 	swap(vertD_curr, vertD_next);
     }

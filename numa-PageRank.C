@@ -74,6 +74,13 @@ struct PR_F {
 	p_next[d] += p_curr[s]/V[s].getOutDegree();
 	return 1;
     }
+    inline double getCurrVal(intT i) {
+	return p_curr[i];
+    }
+    inline bool updateValVer(intT s, double val, intT d) {
+	writeAdd(&p_next[d],val/V[s].getOutDegree());
+	return true;
+    }
     inline bool updateAtomic (intT s, intT d) { //atomic Update
 	writeAdd(&p_next[d],p_curr[s]/V[s].getOutDegree());
 	//return (p_curr[s] / V[s].getOutDegree()) >= 0;
@@ -85,7 +92,7 @@ struct PR_F {
 	return 1;
     }
 
-    inline void initFunc(void *dataPtr) {
+    inline void initFunc(void *dataPtr, intT d) {
 	*(double *)dataPtr = 0.0;
     }
 
@@ -164,6 +171,61 @@ struct PR_subworker_arg {
     volatile int *toggle;
 };
 
+template <class F, class vertex>
+bool* edgeMapDenseForwardOTHER(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, int start = 0, int end = 0) {
+    intT numVertices = GA.n;
+    vertex *G = GA.V;
+
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
+    intT m = 0;
+    intT outEdgesCount = 0;
+    bool *nextB = next->b;
+    
+    int startPos = 0;
+    int endPos = numVertices;
+    if (part) {
+	startPos = start;
+	endPos = end;
+	currNodeNum = frontier->getNodeNumOfIndex(startPos);
+	//printf("nodeNum: %d %d\n", currNodeNum, endPos);
+	currBitVector = frontier->getArr(currNodeNum);
+	nextSwitchPoint = frontier->getOffset(currNodeNum+1);
+	currOffset = frontier->getOffset(currNodeNum);
+    }
+    for (long i=startPos; i<endPos; i++){
+	if (i == nextSwitchPoint) {
+	    currOffset += frontier->getSize(currNodeNum);
+	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	    currNodeNum++;
+	    currBitVector = frontier->getArr(currNodeNum);
+	    //printf("OK\n");
+	}
+	m += G[i].getFakeDegree();
+	if (currBitVector[i-currOffset]) {
+	    intT d = G[i].getFakeDegree();
+	    double val = f.getCurrVal(i);
+	    for(intT j=0; j<d; j++){
+		uintT ngh = G[i].getOutNeighbor(j);
+		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateValVer(i,val,ngh)) {
+		    /*
+		    if (!next->getBit(ngh)) {
+			m++;
+			outEdgesCount += G[ngh].getOutDegree();
+		    }
+		    */
+		    next->setBit(ngh, true);
+		}
+	    }
+	}
+    }
+    return NULL;
+}
+
 template <class vertex>
 void *PageRankSubWorker(void *arg) {
     PR_subworker_arg *my_arg = (PR_subworker_arg *)arg;
@@ -220,8 +282,26 @@ void *PageRankSubWorker(void *arg) {
 
         //edgeMap(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,0,DENSE_FORWARD, false, true, subworker);
 	clearLocalFrontier(output, subworker.tid, subworker.subTid, subworker.numOfSub);
+	output->sparseCounter = 0;
 	subworker.globalWait();
-	edgeMapDenseReduce(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,false,subworker);
+	//edgeMapDenseReduce(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output,false,subworker);
+
+	subworker.localWait();
+	struct timeval startT, endT;
+	struct timezone tz = {0, 0};
+	gettimeofday(&startT, &tz);
+	//edgeMapDenseForward(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output, true, subworker.dense_start, subworker.dense_end);
+	edgeMapDenseForwardOTHER(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output, true, subworker.dense_start, subworker.dense_end);
+	//edgeMapDenseForwardDynamic(GA, Frontier, PR_F<vertex>(p_curr,p_next,GA.V,rangeLow,rangeHi),output, subworker);
+	subworker.localWait();
+	gettimeofday(&endT, &tz);
+	if (subworker.isSubMaster()) {
+	    double time1 = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+	    double time2 = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+	    double duration = time2 - time1;
+	    //printf("time of %d: %lf\n", subworker.tid * CORES_PER_NODE + subworker.subTid, duration);
+	}
+	
 	output->isDense = true;
 
 	pthread_barrier_wait(&global_barr);
@@ -281,7 +361,7 @@ void *PageRankThread(void *arg) {
     pthread_barrier_wait(&barr);
     intT degreeSum = 0;
     for (intT i = rangeLow; i < rangeHi; i++) {
-	degreeSum += GA.V[i].getOutDegree();
+	degreeSum += GA.V[i].getInDegree();
     }
     printf("%d : degree count: %d\n", tid, degreeSum);
     
@@ -469,7 +549,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     int sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
     //graphHasher(GA, hasher);
-    //graphAllEdgeHasher(GA, hasher);
+    graphAllEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
     /*
     intT vertPerPage = PAGESIZE / sizeof(double);
@@ -521,8 +601,8 @@ void PageRank(graph<vertex> &GA, int maxIter) {
 
     if (needResult) {
 	for (intT i = 0; i < GA.n; i++) {
-	    //cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
-	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[i] << "\n";
+	    cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
+	    //cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[i] << "\n";
 	}
     }
 }

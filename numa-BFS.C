@@ -189,7 +189,7 @@ void edgeMapNoRep(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT 
     } else {
 	//Sparse part
 	if (subworker.isMaster()) {
-	    printf("Sparse: %d %d\n", V->numNonzeros(), m);
+	    //printf("Sparse: %d %d\n", V->numNonzeros(), m);
 	    V->toSparse();
 	}
 	subworker.globalWait();
@@ -262,8 +262,8 @@ void *BFSSubWorker(void *arg) {
 
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
-	gettimeofday(&startT, &tz);
-	edgeMapNoRep(GA, Frontier, BFS_F(parents), output, GA.m/20, DENSE_PARALLEL, false, true, subworker);
+	//gettimeofday(&startT, &tz);
+	edgeMapNoRep(GA, Frontier, BFS_F(parents), output, GA.m / 20, DENSE_PARALLEL, false, true, subworker);
 	subworker.localWait();
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	//edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);
@@ -282,13 +282,13 @@ void *BFSSubWorker(void *arg) {
 	}
 	//pthread_barrier_wait(global_barr);
 	subworker.globalWait();
-	gettimeofday(&endT, &tz);
-	double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
-	double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+	//gettimeofday(&endT, &tz);
+	//double timeStart = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+	//double timeEnd = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
 
-	double mapTime = timeEnd - timeStart;
+	//double mapTime = timeEnd - timeStart;
 	if (tid + subTid == 0) {
-	    printf("edge map time: %lf\n", mapTime);
+	    //printf("edge map time: %lf\n", mapTime);
 	}
 	//break;
     }

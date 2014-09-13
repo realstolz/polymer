@@ -842,18 +842,41 @@ bool* edgeMapDense(wghGraph<vertex> GA, vertices* frontier, F f, LocalFrontier *
     intT numVertices = GA.n;
     intT size = next->endID - next->startID;
     vertex *G = GA.V;
+
+    if (subworker.isSubMaster()) {
+	frontier->nextFrontiers[subworker.tid] = next;
+    }
+
+    subworker.globalWait();
+    int localOffset = next->startID;
+    bool *localBitVec = frontier->getArr(subworker.tid);
+    int currNodeNum = 0;
+    bool *currBitVector = frontier->getNextArr(currNodeNum);
+    int nextSwitchPoint = frontier->getSize(0);
+    int currOffset = 0;
+    int counter = 0;
+
     intT startPos = subworker.dense_start;
     intT endPos = subworker.dense_end;
-    bool *bitVec = frontier->getArr(subworker.tid);
+
+    while (startPos >= nextSwitchPoint) {
+	currOffset += frontier->getSize(currNodeNum);
+	nextSwitchPoint += frontier->getSize(currNodeNum + 1);
+	currNodeNum++;
+	currBitVector = frontier->getArr(currNodeNum);
+    }
+
     for (intT i = startPos; i < endPos; i++){
-	next->setBit(i, false);
-	if (f.cond(i) && bitVec[i - next->startID]) { 
-	    intT d = G[i].getInDegree();
+	//next->setBit(i, false);
+	if (f.cond(i)) { 
+	    intT d = G[i].getFakeInDegree();
 	    for(intT j=0; j<d; j++){
 		intT ngh = G[i].getInNeighbor(j);
-		if (f.update(ngh, i, G[i].getInWeight(j))) next->setBit(i, true);
+		if (localBitVec[ngh - localOffset] && f.updateAtomic(ngh,i,G[i].getInWeight(j))) {
+		    currBitVector[i - currOffset] = true;
+		}
 		if(!f.cond(i)) break;
-		__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
+		//__builtin_prefetch(f.nextPrefetchAddr(G[i].getInNeighbor(j+3)), 1, 3);
 	    }
 	}
     }
@@ -1364,8 +1387,8 @@ void edgeMap(wghGraph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT th
 	subworker.globalWait();
 	
 	bool* R = (option == DENSE_FORWARD) ? 
-	    //edgeMapDenseForward(GA, V, f, next, part, start, end) :
-	    edgeMapDenseForwardDynamic(GA, V, f, next, subworker) :
+	    edgeMapDenseForward(GA, V, f, next, part, start, end) :
+	    //edgeMapDenseForwardDynamic(GA, V, f, next, subworker) :
 	    edgeMapDense(GA, V, f, next, option, subworker);
 	next->isDense = true;
     } else {

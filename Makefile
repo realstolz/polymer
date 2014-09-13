@@ -39,6 +39,9 @@ LIBS_I_NEED= -pthread -lnuma
 
 all: $(ALL) $(MYAPPS)
 
+debug: PCFLAGS += -g
+debug: all
+
 % : %.C $(COMMON)
 	$(PCC) $(PCFLAGS) -o $@ $< $(LIBS_I_NEED)
 

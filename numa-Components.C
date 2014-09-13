@@ -71,6 +71,30 @@ struct CC_F {
 	bool res = (writeMin(&IDs[d], IDs[s]) && origID == prevIDs[d]);
 	return res;
     }
+
+    inline void initFunc(void *dataPtr, intT d) {
+	intT *tmp = (intT *)dataPtr;
+	tmp[0] = IDs[d];
+	tmp[1] = prevIDs[d];
+	return;
+    }
+
+    inline bool reduceFunc(void *dataPtr, intT s) {
+	intT *tmp = (intT *)dataPtr;
+	intT origID = *(intT *)dataPtr;
+	if(IDs[s] < origID) {
+	    *(intT *)dataPtr = min(origID,IDs[s]);
+	    if(origID == tmp[1]) return true;
+	}
+	return false;
+    }
+
+    inline bool combineFunc(void *dataPtr, intT d) {
+	intT newVal = *(intT *)dataPtr;
+	intT origID = IDs[d];
+	bool res = (writeMin(&IDs[d], newVal) && origID == prevIDs[d]);
+	return res;
+    }
     
     inline void vertUpdate(intT v) {
 	prevIDs[v] = IDs[v];
@@ -91,6 +115,62 @@ struct CC_Vertex_F {
     return 1;
   }
 };
+
+template <class F, class vertex>
+void edgeMapCustom(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
+	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = NULL) {
+    intT numVertices = GA.n;
+    uintT numEdges = GA.m;
+    vertex *G = GA.V;    
+    long long m = (long long)V->numNonzeros() + V->getEdgeStat();
+    
+    if (subworker.isMaster()) {
+	//printf("%d %d\n", V->numNonzeros(), threshold);
+    }
+    
+    /*
+    if (subworker.isMaster())
+	printf("%d\n", m);
+    */
+    int start = subworker.dense_start;
+    int end = subworker.dense_end;
+
+    if (m >= threshold) {       
+	//Dense part	
+	if (subworker.isMaster()) {
+	    printf("Dense: %d\n", m);
+	    V->toDense();
+	}
+
+	if (subworker.isSubMaster()) {
+	    next->sparseCounter = 0;
+	}
+
+	clearLocalFrontier(next, subworker.tid, subworker.subTid, subworker.numOfSub);
+
+	//pthread_barrier_wait(subworker.global_barr);
+	subworker.globalWait();
+	
+	bool* R = (option == DENSE_FORWARD) ? 
+	    edgeMapDenseForward(GA, V, f, next, part, start, end) :
+	    //edgeMapDense(GA, V, f, next, option, subworker);
+	    edgeMapDenseReduce(GA, V, f, next, option, subworker);
+	next->isDense = true;
+    } else {
+	//Sparse part
+	if (subworker.isMaster()) {
+	    printf("Sparse: %d %d\n", V->numNonzeros(), m);
+	    V->toSparse();
+	}
+	subworker.globalWait();
+	if (V->firstSparse && subworker.isMaster()) {
+	    printf("my first sparse\n");
+	}
+	
+	edgeMapSparseV3(GA, V, f, next, part, subworker);
+	next->isDense = false;
+    }
+}
 
 template <class vertex>
 void *ComponentsSubWorker(void *args) {
@@ -157,7 +237,8 @@ void *ComponentsSubWorker(void *args) {
 	//pthread_barrier_wait(global_barr);
 	subworker.globalWait();
 
-	edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_FORWARD, false, true, subworker);
+	//edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_FORWARD, false, true, subworker);
+	edgeMapCustom(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_PARALLEL, false, true, subworker);
 	/*
 	if (currM >= switchThreshold) {
 	    edgeMap(GA, Frontier, CC_F(IDs,PrevIDs), output, switchThreshold, DENSE_FORWARD, false, true, subworker);
@@ -212,7 +293,7 @@ void *ComponentsWorker(void *args) {
     int rangeLow = my_arg->rangeLow;
     int rangeHi = my_arg->rangeHi;
 
-    graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
+    graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
     
     while (shouldStart == 0);
     pthread_barrier_wait(&timerBarr);
@@ -313,16 +394,16 @@ void Components(graph<vertex> &GA) {
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     int sizeArr[numOfNode];
     Default_Hash_F hasher(GA.n, numOfNode);
-    //graphHasher(GA, hasher);
-    //partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
-
+    graphAllEdgeHasher(GA, hasher);
+    partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
+    /*
     intT vertPerPage = PAGESIZE / sizeof(double);
     intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
     for (int i = 0; i < numOfNode - 1; i++) {
 	sizeArr[i] = subShardSize;
     }
     sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
-    
+    */
     IDs_global = (intT *)mapDataArray(numOfNode, sizeArr, sizeof(intT));
     PrevIDs_global = (intT *)mapDataArray(numOfNode, sizeArr, sizeof(intT));    
 

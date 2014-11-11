@@ -5,7 +5,7 @@ endif
 ifdef EDGELONG
 INTE = -DEDGELONG
 endif
-
+CILK = 1
 # # no compare and swap!
 # ifdef OPENMP
 # PCC = g++

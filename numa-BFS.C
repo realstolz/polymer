@@ -263,7 +263,7 @@ void *BFSSubWorker(void *arg) {
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	//gettimeofday(&startT, &tz);
-	edgeMapNoRep(GA, Frontier, BFS_F(parents), output, GA.m / 20, DENSE_PARALLEL, false, true, subworker);
+	edgeMapNoRep(GA, Frontier, BFS_F(parents), output, GA.m / 10, DENSE_PARALLEL, false, true, subworker);
 	subworker.localWait();
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	//edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);
@@ -381,7 +381,7 @@ void *BFSWorker(void *arg) {
     current->head = 0;
     current->tail = 1;
     */
-
+    /*
     if (tid == 0) {
 	Frontier->asyncQueue = (AsyncChunk **)malloc(sizeof(AsyncChunk *) * GA.n);
 	{parallel_for(intT i = 0; i < GA.n; i++) Frontier->asyncQueue[i] = NULL;}
@@ -392,7 +392,7 @@ void *BFSWorker(void *arg) {
 	Frontier->readerTail = 1;
 	Frontier->m = 1;
     }
-
+    */
     volatile int local_counter = 0;
     volatile int local_toggle = 0;
 
@@ -419,6 +419,11 @@ void *BFSWorker(void *arg) {
 	startPos = arg->endPos;
         pthread_create(&subTids[i], NULL, BFSSubWorker<vertex>, (void *)arg);
     }
+
+    pthread_barrier_wait(&barr);
+    //if (tid == 0)
+	//GA.del();
+    pthread_barrier_wait(&barr);
 
     pthread_barrier_wait(&timerBarr);
 
@@ -468,9 +473,9 @@ struct PR_Hash_F {
 
 template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
-    numOfNode = numa_num_configured_nodes();
+    numOfNode = 1;//numa_num_configured_nodes();
     int numOfCpu = numa_num_configured_cpus();
-    CORES_PER_NODE = numOfCpu / numOfNode;
+    CORES_PER_NODE = 10;//numOfCpu / numOfNode;
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);
@@ -542,11 +547,11 @@ int parallel_main(int argc, char* argv[]) {
 	graph<symmetricVertex> G = 
 	    readGraph<symmetricVertex>(iFile,symmetric,binary); //symmetric graph
 	BFS((intT)start,G);
-	G.del(); 
+	//G.del(); 
     } else {
 	graph<asymmetricVertex> G = 
 	    readGraph<asymmetricVertex>(iFile,symmetric,binary); //asymmetric graph
 	BFS((intT)start,G);
-	G.del();
+	//G.del();
     }
 }

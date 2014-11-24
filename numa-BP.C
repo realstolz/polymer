@@ -601,12 +601,12 @@ int parallel_main(int argc, char* argv[]) {
 	graph<symmetricVertex> G = 
 	    readGraph<symmetricVertex>(iFile,symmetric,binary);
 	BeliefPropagation(G, maxIter);
-	G.del(); 
+	//G.del(); 
     } else {
 	graph<asymmetricVertex> G = 
 	    readGraph<asymmetricVertex>(iFile,symmetric,binary);
 	BeliefPropagation(G, maxIter);
-	G.del();
+	//G.del();
     }
     return 0;
 }

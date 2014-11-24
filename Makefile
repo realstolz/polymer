@@ -31,15 +31,14 @@ PLFLAGS = -fcilkplus -lcilkrts
 
 COMMON= ligra.h ligra-rewrite.h ligra-rewrite-wgh.h graph.h utils.h IO.h parallel.h gettime.h quickSort.h
 
-ALL= BFS BC Components Radii PageRank PageRankDelta BellmanFord PageRank-Pull 
-
-MYAPPS= DegreeCount SPMV BP numa-BP numa-PageRank numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-BFS-async-pipe numa-SPMV numa-BellmanFord ConvertToJSON ConvertTmp
+ALL= DegreeCount
+MYAPPS= numa-BP numa-PageRank numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-BFS-async-pipe numa-SPMV numa-BellmanFord ConvertToJSON ConvertTmp
 MYHEADER= ligra-rewrite.h ligra-numa.h
 LIBS_I_NEED= -pthread -lnuma
 
 all: $(ALL) $(MYAPPS)
 
-debug: PCFLAGS += -g
+debug: PCFLAGS = -fcilkplus -lcilkrts -O0 -g -DCILK $(INTT) $(INTE)
 debug: all
 
 % : %.C $(COMMON)

@@ -215,6 +215,12 @@ void *SPMVThread(void *arg) {
     printf("%d before partition\n", tid);
     //wghGraph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
     wghGraph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
+
+    pthread_barrier_wait(&barr);
+    if (tid == 0)
+	GA.del();
+    pthread_barrier_wait(&barr);
+
     printf("%d after partition\n", tid);
 
     int sizeOfShards[CORES_PER_NODE];
@@ -414,12 +420,12 @@ int parallel_main(int argc, char* argv[]) {
 	wghGraph<symmetricWghVertex> WG = 
 	    readWghGraph<symmetricWghVertex>(iFile,symmetric,binary);
 	SPMV_main(WG, maxIter);
-	WG.del(); 
+	//WG.del(); 
     } else {
 	wghGraph<asymmetricWghVertex> WG = 
 	    readWghGraph<asymmetricWghVertex>(iFile,symmetric,binary);
 	SPMV_main(WG, maxIter);
-	WG.del();
+	//WG.del();
     }
     return 0;
 }

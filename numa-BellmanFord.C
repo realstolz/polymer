@@ -177,7 +177,7 @@ void *BFSubWorker(void *arg) {
 	struct timeval startT, endT;
 	struct timezone tz = {0, 0};
 	gettimeofday(&startT, &tz);
-	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.m/20, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.m/10, DENSE_FORWARD, false, true, subworker);
 	//pthread_barrier_wait(&global_barr);
 	subworker.globalWait();
         vertexMap(Frontier, BF_Vertex_F(Visited), tid, subTid, CORES_PER_NODE);
@@ -243,7 +243,6 @@ void *BFThread(void *arg) {
     }
 
     while (shouldStart == 0) ;
-    pthread_barrier_wait(&timerBarr);
     printf("over filtering\n");
     /*
       if (0 != __cilkrts_set_param("nworkers","1")) {
@@ -347,6 +346,13 @@ void *BFThread(void *arg) {
 	startPos = arg->endPos;
         pthread_create(&subTids[i], NULL, BFSubWorker<vertex>, (void *)arg);
     }
+
+    pthread_barrier_wait(&barr);
+    if (tid == 0)
+	GA.del();
+    pthread_barrier_wait(&barr);
+
+    pthread_barrier_wait(&timerBarr);
 
     pthread_barrier_wait(&barr);
 
@@ -454,12 +460,12 @@ int parallel_main(int argc, char* argv[]) {
 	wghGraph<symmetricWghVertex> WG = 
 	    readWghGraph<symmetricWghVertex>(iFile,symmetric,binary);
 	BF_main(WG, (intT)startPos);
-	WG.del(); 
+	//WG.del(); 
     } else {
 	wghGraph<asymmetricWghVertex> WG = 
 	    readWghGraph<asymmetricWghVertex>(iFile,symmetric,binary);
 	BF_main(WG, (intT)startPos);
-	WG.del();
+	//WG.del();
     }
     return 0;
 }

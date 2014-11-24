@@ -27,9 +27,6 @@
 #include <stdlib.h>
 #include "parallel.h"
 #include "quickSort.h"
-
-#define mallocA(__E,__n) (__E*) malloc((__n)*sizeof(__E))
-
 using namespace std;
 
 typedef pair<uintE,uintE> intPair;
@@ -76,7 +73,8 @@ _seq<char> readStringFromFile(char *fileName) {
   long end = file.tellg();
   file.seekg (0, ios::beg);
   long n = end - file.tellg();
-  char* bytes = mallocA(char,n+1);
+  char* bytes = newA(char,n+1);
+  //printf("end is: %lu, n is: %lu, bytes is: %p\n", end, n, bytes);
   file.read (bytes,n);
   file.close();
   return _seq<char>(bytes,n);
@@ -88,7 +86,7 @@ words stringToWords(char *Str, long n) {
       if (isSpace(Str[i])) Str[i] = 0; }
 
   // mark start of words
-  bool *FL = mallocA(bool,n);
+  bool *FL = newA(bool,n);
   FL[0] = Str[0];
   {parallel_for (long i=1; i < n; i++) FL[i] = Str[i] && !Str[i-1];}
     
@@ -98,7 +96,7 @@ words stringToWords(char *Str, long n) {
   long *offsets = Off.A;
 
   // pointer to each start of word
-  char **SA = mallocA(char*, m);
+  char **SA = newA(char*, m);
   {parallel_for (long j=0; j < m; j++) SA[j] = Str+offsets[j];}
 
   free(offsets); free(FL);
@@ -122,14 +120,14 @@ graph<vertex> readGraphFromFile(char* fname, bool isSymmetric) {
     abort();
   }
 
-  intT* offsets = mallocA(intT,n);
-  intE* edges = mallocA(intE,m);
+  intT* offsets = newA(intT,n);
+  intE* edges = newA(intE,m);
 
   {parallel_for(long i=0; i < n; i++) offsets[i] = atol(W.Strings[i + 3]);}
   {parallel_for(long i=0; i<m; i++) edges[i] = atol(W.Strings[i+n+3]); }
   //W.del(); // to deal with performance bug in malloc
     
-  vertex* v = mallocA(vertex,n);
+  vertex* v = newA(vertex,n);
 
   {parallel_for (uintT i=0; i < n; i++) {
     uintT o = offsets[i];
@@ -139,10 +137,10 @@ graph<vertex> readGraphFromFile(char* fname, bool isSymmetric) {
     }}
 
   if(!isSymmetric) {
-    intT* tOffsets = mallocA(intT,n);
+    intT* tOffsets = newA(intT,n);
     {parallel_for(intT i=0;i<n;i++) tOffsets[i] = INT_T_MAX;}
-    intE* inEdges = mallocA(intE,m);
-    intPair* temp = mallocA(intPair,m);
+    intE* inEdges = newA(intE,m);
+    intPair* temp = newA(intPair,m);
     {parallel_for(intT i=0;i<n;i++){
       uintT o = offsets[i];
       for(intT j=0;j<v[i].getOutDegree();j++){	  
@@ -189,6 +187,7 @@ template <class vertex>
 wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
   _seq<char> S = readStringFromFile(fname);
   words W = stringToWords(S.A, S.n);
+  //printf("convert over\n");
   if (W.Strings[0] != (string) "WeightedAdjacencyGraph") {
     cout << "Bad input file" << endl;
     abort();
@@ -202,17 +201,17 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
     abort();
   }
 
-  intT* offsets = mallocA(intT,n);
-  intE* edgesAndWeights = mallocA(intE,2*m);
+  intT* offsets = newA(intT,n);
+  intE* edgesAndWeights = newA(intE,2*m);
 
   {parallel_for(long i=0; i < n; i++) offsets[i] = atol(W.Strings[i + 3]);}
   {parallel_for(long i=0; i<m; i++) {
       edgesAndWeights[2*i] = atol(W.Strings[i+n+3]); 
       edgesAndWeights[2*i+1] = atol(W.Strings[i+n+m+3]);
     } }
-  //W.del(); // to deal with performance bug in malloc
+  W.del(); // to deal with performance bug in malloc
 
-  vertex *v = mallocA(vertex,n);
+  vertex *v = newA(vertex,n);
 
   {parallel_for (uintT i=0; i < n; i++) {
     uintT o = offsets[i];
@@ -220,12 +219,12 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
     v[i].setOutDegree(l);
     v[i].setOutNeighbors((intE*)(edgesAndWeights+2*o));
     }}
-  
+
   if(!isSymmetric) {
-    intT* tOffsets = mallocA(intT,n);
+    intT* tOffsets = newA(intT,n);
     {parallel_for(intT i=0;i<n;i++) tOffsets[i] = INT_T_MAX;}
-    intE* inEdgesAndWghs = mallocA(intE,2*m);
-    intTriple* temp = mallocA(intTriple,m);
+    intE* inEdgesAndWghs = newA(intE,2*m);
+    intTriple* temp = newA(intTriple,m);
     {parallel_for(intT i=0;i<n;i++){
       uintT o = offsets[i];
       for(intT j=0;j<v[i].getOutDegree();j++){	  
@@ -233,20 +232,19 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
       }
       }}
     free(offsets);
-
     quickSort(temp,m,pairFirstCmp<intPair>());
 
     tOffsets[0] = 0; 
     inEdgesAndWghs[0] = temp[0].second.first;
     inEdgesAndWghs[1] = temp[0].second.second;
-    {parallel_for(intT i=1;i<m;i++) {
+    {parallel_for(long i=1;i<m;i++) {
       inEdgesAndWghs[2*i] = temp[i].second.first; 
       inEdgesAndWghs[2*i+1] = temp[i].second.second;
       if(temp[i].first != temp[i-1].first) {
 	tOffsets[temp[i].first] = i;
       }
       }}
-
+    //printf("offset over\n");
     free(temp);
 
     uintT currOffset = m;
@@ -313,7 +311,7 @@ graph<vertex> readGraphFromBinary(char* iFile, bool isSymmetric) {
   in3.close();
   intT* offsets = (intT*) t;
 
-  vertex* v = mallocA(vertex,n);
+  vertex* v = newA(vertex,n);
   
   {parallel_for(long i=0;i<n;i++) {
     uintT o = offsets[i];
@@ -324,10 +322,10 @@ graph<vertex> readGraphFromBinary(char* iFile, bool isSymmetric) {
   cout << "n = "<<n<<" m = "<<m<<endl;
 
   if(!isSymmetric) {
-    intT* tOffsets = mallocA(intT,n);
+    intT* tOffsets = newA(intT,n);
     {parallel_for(intT i=0;i<n;i++) tOffsets[i] = INT_T_MAX;}
-    uintE* inEdges = mallocA(uintE,m);
-    intPair* temp = mallocA(intPair,m);
+    uintE* inEdges = newA(uintE,m);
+    intPair* temp = newA(intPair,m);
     {parallel_for(intT i=0;i<n;i++){
       uintT o = offsets[i];
       for(intT j=0;j<v[i].getOutDegree();j++){
@@ -408,8 +406,8 @@ wghGraph<vertex> readWghGraphFromBinary(char* iFile, bool isSymmetric) {
   in3.close();
   intT* offsets = (intT*) t;
 
-  vertex *V = mallocA(vertex, n);
-  intE* edgesAndWeights = mallocA(intE,2*m);
+  vertex *V = newA(vertex, n);
+  intE* edgesAndWeights = newA(intE,2*m);
   {parallel_for(long i=0;i<m;i++) {
     edgesAndWeights[2*i] = edges[i];
     edgesAndWeights[2*i+1] = 1; //give them unit weight
@@ -425,10 +423,10 @@ wghGraph<vertex> readWghGraphFromBinary(char* iFile, bool isSymmetric) {
   cout << "n = "<<n<<" m = "<<m<<endl;
 
   if(!isSymmetric) {
-    intT* tOffsets = mallocA(intT,n);
+    intT* tOffsets = newA(intT,n);
     {parallel_for(intT i=0;i<n;i++) tOffsets[i] = INT_T_MAX;}
-    intE* inEdgesAndWghs = mallocA(intE,2*m);
-    intPair* temp = mallocA(intPair,m);
+    intE* inEdgesAndWghs = newA(intE,2*m);
+    intPair* temp = newA(intPair,m);
     {parallel_for(intT i=0;i<n;i++){
       uintT o = offsets[i];
       for(intT j=0;j<V[i].getOutDegree();j++){

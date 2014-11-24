@@ -29,7 +29,7 @@
 #include <sys/mman.h>
 #include <numa.h>
 
-#include <papi.h>
+//#include <papi.h>
 #define NUM_EVENTS 3
 
 using namespace std;
@@ -37,6 +37,7 @@ using namespace std;
 #define PAGE_SIZE (4096)
 
 int CORES_PER_NODE = 6;
+int NODE_USED = -1;
 
 volatile int shouldStart = 0;
 
@@ -368,6 +369,11 @@ void *PageRankThread(void *arg) {
     //graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
     graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
 
+    pthread_barrier_wait(&barr);
+    if (tid == 0)
+	GA.del();
+    pthread_barrier_wait(&barr);
+
     int sizeOfShards[CORES_PER_NODE];    
 
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, true);
@@ -541,7 +547,9 @@ template <class vertex>
 void PageRank(graph<vertex> &GA, int maxIter) {
     numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
-    CORES_PER_NODE = 10;//numa_num_configured_cpus() / numOfNode;
+    CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
+    if (NODE_USED != -1)
+	numOfNode = NODE_USED;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
@@ -615,21 +623,22 @@ int parallel_main(int argc, char* argv[]) {
     needResult = false;
     if(argc > 1) iFile = argv[1];
     if(argc > 2) maxIter = atoi(argv[2]);
-    if(argc > 3) if((string) argv[3] == (string) "-result") needResult = true;
-    if(argc > 4) if((string) argv[4] == (string) "-s") symmetric = true;
-    if(argc > 5) if((string) argv[5] == (string) "-b") binary = true;
+    if(argc > 3) NODE_USED = atoi(argv[3]);
+    if(argc > 4) if((string) argv[4] == (string) "-result") needResult = true;
+    if(argc > 5) if((string) argv[5] == (string) "-s") symmetric = true;
+    if(argc > 6) if((string) argv[6] == (string) "-b") binary = true;
     numa_set_interleave_mask(numa_all_nodes_ptr);
     startTime();
     if(symmetric) {
 	graph<symmetricVertex> G = 
 	    readGraph<symmetricVertex>(iFile,symmetric,binary);
 	PageRank(G, maxIter);
-	G.del(); 
+	//G.del(); 
     } else {
 	graph<asymmetricVertex> G = 
 	    readGraph<asymmetricVertex>(iFile,symmetric,binary);
 	PageRank(G, maxIter);
-	G.del();
+	//G.del();
     }
     return 0;
 }

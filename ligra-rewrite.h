@@ -35,7 +35,7 @@
 #include "gettime.h"
 #include "utils.h"
 #include "graph.h"
-#include "IO.h"
+#include "IO-numa.h"
 
 #include <numa.h>
 #include <pthread.h>

@@ -138,7 +138,7 @@ void edgeMapCustom(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT
     if (m >= threshold) {       
 	//Dense part	
 	if (subworker.isMaster()) {
-	    printf("Dense: %d\n", m);
+	    //printf("Dense: %d\n", m);
 	    V->toDense();
 	}
 
@@ -159,7 +159,7 @@ void edgeMapCustom(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT
     } else {
 	//Sparse part
 	if (subworker.isMaster()) {
-	    printf("Sparse: %d %d\n", V->numNonzeros(), m);
+	    //printf("Sparse: %d %d\n", V->numNonzeros(), m);
 	    V->toSparse();
 	}
 	subworker.globalWait();
@@ -221,14 +221,19 @@ void *ComponentsSubWorker(void *args) {
 
     pthread_barrier_wait(global_barr);
     
-    intT switchThreshold = GA.m/20;
+    intT switchThreshold = GA.m/8;
+
+    struct timeval startT, endT;
+    struct timezone tz = {0, 0};
+
+    gettimeofday(&startT, &tz);
 
     while (!Frontier->isEmpty() || currIter == 0) {
 	currIter++;
 	intT currM = Frontier->numNonzeros();
 	if (subworker.isMaster()) {
 	    numVisited += currM;
-	    printf("non zeros: %d\n", currM);
+	    //printf("non zeros: %d\n", currM);
 	}
 	
 	//clearLocalFrontier(output, tid, subTid, CORES_PER_NODE);
@@ -274,8 +279,13 @@ void *ComponentsSubWorker(void *args) {
     }
 
     if (subworker.isMaster()) {
+	gettimeofday(&endT, &tz);
+	double time1 = ((double)startT.tv_sec) + ((double)startT.tv_usec) / 1000000.0;
+	double time2 = ((double)endT.tv_sec) + ((double)endT.tv_usec) / 1000000.0;
+	printf("time used %lf\n", time2 - time1);
 	cout << "Finished in " << currIter << " iterations.\n";
     }
+
     pthread_barrier_wait(master_barr);
     return NULL;
 }
@@ -296,7 +306,6 @@ void *ComponentsWorker(void *args) {
     graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
     
     while (shouldStart == 0);
-    pthread_barrier_wait(&timerBarr);
     
     const intT n = GA.n;
     int numOfT = my_arg->numOfNode;
@@ -366,6 +375,12 @@ void *ComponentsWorker(void *args) {
 	startPos = arg->endPos;
         pthread_create(&subTids[i], NULL, ComponentsSubWorker<vertex>, (void *)arg);
     }
+
+    pthread_barrier_wait(&barr);
+    if (tid == 0)
+	GA.del();
+    pthread_barrier_wait(&barr);
+    pthread_barrier_wait(&timerBarr);
 
     intT *IDs = IDs_global;
     Default_Hash_F hasher(GA.n, numOfNode);
@@ -452,11 +467,11 @@ int parallel_main(int argc, char* argv[]) {
     graph<symmetricVertex> G = 
       readGraph<symmetricVertex>(iFile,symmetric,binary);
     Components(G);
-    G.del(); 
+    //G.del(); 
   } else {
     graph<asymmetricVertex> G = 
       readGraph<asymmetricVertex>(iFile,symmetric,binary);
     Components(G);
-    G.del();
+    //G.del();
   }
 }

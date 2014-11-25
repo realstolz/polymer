@@ -29,7 +29,7 @@ endif
 PCFLAGS = -fcilkplus -lcilkrts -O2 -DCILK $(INTT) $(INTE)
 PLFLAGS = -fcilkplus -lcilkrts
 
-COMMON= ligra.h ligra-rewrite.h ligra-rewrite-wgh.h graph.h utils.h IO.h parallel.h gettime.h quickSort.h
+COMMON= ligra.h polymer.h polymer-wgh.h graph.h utils.h IO.h parallel.h gettime.h quickSort.h
 
 ALL= DegreeCount
 MYAPPS= numa-BP numa-PageRank numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-BFS-async-pipe numa-SPMV numa-BellmanFord ConvertToJSON ConvertTmp

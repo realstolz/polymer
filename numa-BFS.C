@@ -475,7 +475,7 @@ struct PR_Hash_F {
 
 template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
-    numOfNode = 1;//numa_num_configured_nodes();
+    numOfNode = numa_num_configured_nodes();
     int numOfCpu = numa_num_configured_cpus();
     CORES_PER_NODE = 10;//numOfCpu / numOfNode;
     vPerNode = GA.n / numOfNode;

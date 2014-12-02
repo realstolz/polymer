@@ -22,6 +22,12 @@
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
+
 #include <iostream>
 #include <fstream>
 #include <stdlib.h>
@@ -476,4 +482,76 @@ template <class vertex>
 wghGraph<vertex> readWghGraph(char* iFile, bool symmetric, bool binary) {
   if(binary) return readWghGraphFromBinary<vertex>(iFile,symmetric); 
   else return readWghGraphFromFile<vertex>(iFile,symmetric);
+}
+
+
+template <class vertex>
+graph<vertex> loadGraphFromBin(char *fileName) {
+    int fd = open(fileName, O_RDONLY, S_IREAD);
+    long long totalSize = 0;
+    read(fd, (void *)&totalSize, sizeof(long long));
+    printf("totalSize is: %d\n", totalSize);
+    void *buf = (void *)malloc(totalSize);
+    lseek(fd, 0, SEEK_SET);
+
+    read(fd, buf, totalSize);
+
+    char *ptr = (char *)buf;
+    ptr += sizeof(long long);
+
+    intT n = *(intT *)ptr;
+    ptr += sizeof(intT);
+    
+    long long m = *(long long *)ptr;
+    ptr += sizeof(long long);
+
+    printf("n & m: %d %d\n", n, m);
+
+    vertex *vertices = newA(vertex, n);
+    intE *edges = newA(intE, m);
+    intE *inEdges = newA(intE, m);
+    long long counter = 0;
+    long long inCounter = 0;
+
+    for (intT i = 0; i < n; i++) {
+	if (*(intT *)ptr != -1) {
+	    printf("oops\n");
+	}
+	ptr += sizeof(intT);
+
+	intT vertIdx = *(intT *)ptr;
+	if (vertIdx != i) {
+	    printf("oops\n");
+	}
+	ptr += sizeof(intT);
+	
+	intT outDeg = *(intT *)ptr;
+	ptr += sizeof(intT);
+
+	intT inDeg = *(intT *)ptr;
+	ptr += sizeof(intT);
+	
+	vertices[i].setOutDegree(outDeg);
+	vertices[i].setOutNeighbors(&edges[counter]);
+	vertices[i].setInDegree(inDeg);
+	vertices[i].setInNeighbors(&inEdges[inCounter]);
+
+	for (intT j = 0; j < outDeg; j++) {
+	    intE dst = *(intE *)ptr;
+	    edges[counter++] = dst;
+	    ptr += sizeof(intE);
+	}
+	
+	for (intT j = 0; j < inDeg; j++) {
+	    intE dst = *(intE *)ptr;
+	    inEdges[inCounter++] = dst;
+	    ptr += sizeof(intE);
+	}
+    }
+    
+    return graph<vertex>(vertices, (intT)n, m, edges);
+}
+
+template <class vertex>
+wghGraph<vertex> loadWghGraphFromBin(char *fileName) {
 }

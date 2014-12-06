@@ -555,3 +555,61 @@ graph<vertex> loadGraphFromBin(char *fileName) {
 template <class vertex>
 wghGraph<vertex> loadWghGraphFromBin(char *fileName) {
 }
+
+
+template <class vertex>
+void dumpGraphToBin(graph<vertex> &graph, char *fileName) {
+    const intT n = graph.n;
+    
+    long long totalSize = 0;
+    for (intT i = 0; i < n; i++) {
+	totalSize += 4 * sizeof(intT); // const -1, vertID, outDeg, inDeg
+	totalSize += graph.V[i].getOutDegree() * sizeof(intE);
+	totalSize += graph.V[i].getInDegree() * sizeof(intE);
+    }
+    totalSize += sizeof(intT) + sizeof(long long) * 2;
+    
+    printf("Total size is: %ld\n", totalSize);
+    
+    void *buf = (void *)malloc(totalSize);
+    
+    char *ptr = (char *)buf;
+    
+    *(long long *)ptr = totalSize;
+    ptr += sizeof(long long);
+    
+    *(intT *)ptr = n;
+    ptr += sizeof(intT);
+    
+    *(long long *)ptr = graph.m;
+    ptr += sizeof(long long);
+    
+    printf("write n & m: %d %d\n", n, graph.m);
+    
+    for (intT i = 0; i < n; i++) {
+	*(intT *)ptr = -1;
+	ptr += sizeof(intT);
+	
+	*(intT *)ptr = i;
+	ptr += sizeof(intT);
+	
+	*(intT *)ptr = graph.V[i].getOutDegree();
+	ptr += sizeof(intT);
+	
+	*(intT *)ptr = graph.V[i].getInDegree();
+	ptr += sizeof(intT);
+	
+	for (intT j = 0; j < graph.V[i].getOutDegree(); j++) {
+	    *(intE *)ptr = graph.V[i].getOutNeighbor(j);
+	    ptr += sizeof(intE);
+	}
+	
+	for (intT j = 0; j < graph.V[i].getInDegree(); j++) {
+	    *(intE *)ptr = graph.V[i].getInNeighbor(j);
+	    ptr += sizeof(intE);
+	}
+    }
+    
+    int fd = open(fileName, O_RDWR | O_CREAT, S_IWRITE | S_IREAD);
+    write(fd, buf, totalSize);
+}

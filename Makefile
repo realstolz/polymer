@@ -5,7 +5,7 @@ endif
 ifdef EDGELONG
 INTE = -DEDGELONG
 endif
-CILK = 1
+#CILK = 1
 # # no compare and swap!
 # ifdef OPENMP
 # PCC = g++
@@ -26,8 +26,8 @@ PCC = g++
 PCFLAGS = -O2 $(INTT) $(INTE)
 endif
 
-PCFLAGS = -fcilkplus -lcilkrts -O2 -DCILK $(INTT) $(INTE)
-PLFLAGS = -fcilkplus -lcilkrts
+#PCFLAGS = -fcilkplus -lcilkrts -O2 -DCILK $(INTT) $(INTE)
+#PLFLAGS = -fcilkplus -lcilkrts
 
 COMMON= ligra.h polymer.h polymer-wgh.h graph.h utils.h IO.h parallel.h gettime.h quickSort.h
 

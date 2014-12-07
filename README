@@ -16,7 +16,7 @@ appropriate environment variables set as described above. Currently
 the results of the computation are not used, but the code can be 
 easily modified to output the results to a file.
 
-To develop a new implementation, simply include "ligra-rewrite.h" in the
+To develop a new implementation, simply include "polymer.h" in the
 implementation files. When finished, one may add it to the ALL
 variable in Makefile.
 

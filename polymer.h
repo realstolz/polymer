@@ -867,6 +867,7 @@ struct vertices {
     }
 
     bool eq (vertices& b) {
+	return false;
     }
     
     void print() {
@@ -915,12 +916,13 @@ enum options {
 };
 
 
+Subworker_Partitioner dummyPartitioner(1);
 
 
 //*****EDGE FUNCTIONS*****
 
 template <class F, class vertex>
-bool* edgeMapDense(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
+bool* edgeMapDense(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     intT size = next->endID - next->startID;
     vertex *G = GA.V;
@@ -1032,7 +1034,7 @@ bool* edgeMapDenseForward(graph<vertex> GA, vertices *frontier, F f, LocalFronti
 #define DYNAMIC_CHUNK_SIZE (64)
 
 template <class F, class vertex>
-bool* edgeMapDenseForwardDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=NULL) {
+bool* edgeMapDenseForwardDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=dummyPartitioner) {
     intT numVertices = GA.n;
     vertex *G = GA.V;
     if (subworker.isMaster()) {
@@ -1093,7 +1095,7 @@ bool* edgeMapDenseForwardDynamic(graph<vertex> GA, vertices *frontier, F f, Loca
 }
 
 template <class F, class vertex>
-bool* edgeMapDenseReduce(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
+bool* edgeMapDenseReduce(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     intT size = next->endID - next->startID;
     vertex *G = GA.V;
@@ -1166,7 +1168,7 @@ bool* edgeMapDenseReduce(graph<vertex> GA, vertices* frontier, F f, LocalFrontie
 }
 
 template <class F, class vertex>
-bool* edgeMapDenseDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=NULL) {
+bool* edgeMapDenseDynamic(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=dummyPartitioner) {
     intT numVertices = GA.n;
     vertex *G = GA.V;
     if (subworker.isMaster()) {
@@ -1356,7 +1358,7 @@ AsyncChunk *newChunk(int blockSize) {
 }
 
 template <class F, class vertex>
-void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = NULL) {
+void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = dummyPartitioner) {
     const int BLOCK_SIZE = 64;
     
     vertex *V = GA.V;
@@ -1510,7 +1512,7 @@ void edgeMapSparseAsync(graph<vertex> GA, vertices *frontier, F f, LocalFrontier
 }
 
 template <class F, class vertex>
-void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = NULL) {
+void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = dummyPartitioner) {
     const int BLOCK_SIZE = 64;    
     vertex *V = GA.V;
     int tid = subworker.tid;
@@ -1753,7 +1755,7 @@ void edgeMapSparseAsyncPipe(graph<vertex> GA, vertices *frontier, F f, LocalFron
 void switchFrontier(int nodeNum, vertices *V, LocalFrontier* &next);
 
 template <class F, class vertex>
-void edgeMapSparseV5(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = NULL) {
+void edgeMapSparseV5(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = dummyPartitioner) {
     vertex *V = GA.V;
     intT currM = frontier->numNonzeros();
     int startPos = 0;//subworker.getStartPos(currM);
@@ -1830,7 +1832,7 @@ void edgeMapSparseV5(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 }
 
 template <class F, class vertex>
-void edgeMapSparseV4(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool firstTime = false, Subworker_Partitioner &subworker = NULL) {
+void edgeMapSparseV4(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool firstTime = false, Subworker_Partitioner &subworker = dummyPartitioner) {
     // in V4, all thread has its own chunk.
     vertex *V = GA.V;
     
@@ -1926,7 +1928,7 @@ void edgeMapSparseV4(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 }
 
 template <class F, class vertex>
-void edgeMapSparseV3(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker = NULL) {
+void edgeMapSparseV3(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker = dummyPartitioner) {
     vertex *V = GA.V;
     if (part) {
 	intT currM = frontier->numNonzeros();
@@ -2003,7 +2005,7 @@ void edgeMapSparseV3(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 }
 
 template <class F, class vertex>
-void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker = NULL) {
+void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker = dummyPartitioner) {
     vertex *V = GA.V;
     if (part) {
 	intT currM = frontier->numNonzeros();
@@ -2138,7 +2140,7 @@ void edgeMapSparseV2(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 }
 
 template <class F, class Vert_F, class vertex>
-void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, Vert_F vf, LocalFrontier *next, Subworker_Partitioner &subworker= NULL) {
+void edgeMapSparse(graph<vertex> GA, vertices *frontier, F f, Vert_F vf, LocalFrontier *next, Subworker_Partitioner &subworker=dummyPartitioner) {
     vertex *V = GA.V;
     intT sparseIter = 0;
     if (!subworker.isMaster()) {
@@ -2240,7 +2242,7 @@ void clearLocalFrontier(LocalFrontier *next, int nodeNum, int subNum, int totalS
 // decides on sparse or dense base on number of nonzeros in the active vertices
 template <class F, class vertex>
 void edgeMap(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
-	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = NULL) {
+	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    

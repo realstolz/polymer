@@ -177,7 +177,7 @@ struct BP_subworker_arg {
 };
 
 template <class F, class vertex>
-bool* edgeMapDenseBPNoRep(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker=NULL) {
+bool* edgeMapDenseBPNoRep(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker=dummyPartitioner) {
     intT numVertices = GA.n;
     vertex *G = GA.V;
 

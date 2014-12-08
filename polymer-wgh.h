@@ -787,6 +787,7 @@ struct vertices {
     }
 
     bool eq (vertices& b) {
+	return false;
     }
     
     void print() {
@@ -834,12 +835,12 @@ enum options {
 };
 
 
-
+Subworker_Partitioner dummyPartitioner(1);
 
 //*****EDGE FUNCTIONS*****
 
 template <class F, class vertex>
-bool* edgeMapDense(wghGraph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
+bool* edgeMapDense(wghGraph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     intT size = next->endID - next->startID;
     vertex *G = GA.V;
@@ -948,7 +949,7 @@ bool* edgeMapDenseForward(wghGraph<vertex> GA, vertices *frontier, F f, LocalFro
 }
 
 template <class F, class vertex>
-bool* edgeMapDenseReduce(wghGraph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
+bool* edgeMapDenseReduce(wghGraph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     intT size = next->endID - next->startID;
     vertex *G = GA.V;
@@ -1011,7 +1012,7 @@ bool* edgeMapDenseReduce(wghGraph<vertex> GA, vertices* frontier, F f, LocalFron
 #define DYNAMIC_CHUNK_SIZE (1024)
 
 template <class F, class vertex>
-bool* edgeMapDenseForwardDynamic(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=NULL) {
+bool* edgeMapDenseForwardDynamic(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker=dummyPartitioner) {
     intT numVertices = GA.n;
     vertex *G = GA.V;
     if (subworker.isMaster()) {
@@ -1117,7 +1118,7 @@ AsyncChunk *newChunk(int blockSize) {
 }
 
 template <class F, class vertex>
-void edgeMapSparseAsync(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = NULL) {
+void edgeMapSparseAsync(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, Subworker_Partitioner &subworker = dummyPartitioner) {
     const int BLOCK_SIZE = 64;
     
     vertex *V = GA.V;
@@ -1271,7 +1272,7 @@ void edgeMapSparseAsync(wghGraph<vertex> GA, vertices *frontier, F f, LocalFront
 }
 
 template <class F, class vertex>
-void edgeMapSparseV3(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker = NULL) {
+void edgeMapSparseV3(wghGraph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, Subworker_Partitioner &subworker = dummyPartitioner) {
     vertex *V = GA.V;
     if (part) {
 	intT currM = frontier->numNonzeros();
@@ -1357,7 +1358,7 @@ void clearLocalFrontier(LocalFrontier *next, int nodeNum, int subNum, int totalS
 // decides on sparse or dense base on number of nonzeros in the active vertices
 template <class F, class vertex>
 void edgeMap(wghGraph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
-	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = NULL) {
+	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    

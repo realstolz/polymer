@@ -120,7 +120,7 @@ struct CC_Vertex_F {
 
 template <class F, class vertex>
 void edgeMapCustom(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
-	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = NULL) {
+	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    

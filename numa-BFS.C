@@ -111,7 +111,7 @@ struct BFS_subworker_arg {
 };
 
 template <class F, class vertex>
-bool* edgeMapDenseNoRep(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = 0) {
+bool* edgeMapDenseNoRep(graph<vertex> GA, vertices* frontier, F f, LocalFrontier *next, bool parallel = 0, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     graph<vertex> &fullG = *(graph<vertex> *)fullGraph;
     //intT size = next->endID - next->startID;
@@ -160,7 +160,7 @@ bool* edgeMapDenseNoRep(graph<vertex> GA, vertices* frontier, F f, LocalFrontier
 
 template <class F, class vertex>
 void edgeMapNoRep(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT threshold = -1, 
-	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = NULL) {
+	     char option=DENSE, bool remDups=false, bool part = false, Subworker_Partitioner &subworker = dummyPartitioner) {
     intT numVertices = GA.n;
     uintT numEdges = GA.m;
     vertex *G = GA.V;    

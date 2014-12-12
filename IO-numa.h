@@ -490,8 +490,8 @@ graph<vertex> loadGraphFromBin(char *fileName) {
     int fd = open(fileName, O_RDONLY, S_IREAD);
     long long totalSize = 0;
     read(fd, (void *)&totalSize, sizeof(long long));
-    printf("totalSize is: %d\n", totalSize);
     void *buf = (void *)malloc(totalSize);
+    printf("totalSize is: %ld %p\n", totalSize, buf);
     lseek(fd, 0, SEEK_SET);
 
     read(fd, buf, totalSize);
@@ -515,7 +515,8 @@ graph<vertex> loadGraphFromBin(char *fileName) {
 
     for (intT i = 0; i < n; i++) {
 	if (*(intT *)ptr != -1) {
-	    printf("oops\n");
+	    printf("oops: %d\n", i);
+	    abort();
 	}
 	ptr += sizeof(intT);
 
@@ -606,6 +607,39 @@ void dumpGraphToBin(graph<vertex> &graph, char *fileName) {
 	
 	for (intT j = 0; j < graph.V[i].getInDegree(); j++) {
 	    *(intE *)ptr = graph.V[i].getInNeighbor(j);
+	    ptr += sizeof(intE);
+	}
+    }
+    
+    int fd = open(fileName, O_RDWR | O_CREAT, S_IWRITE | S_IREAD);
+    write(fd, buf, totalSize);
+}
+
+template <class vertex>
+void dumpSubgraphToEdgeList(graph<vertex> &graph, char *fileName) {
+    const intT n = graph.n;
+    
+    long long totalSize = 0;
+    for (intT i = 0; i < n; i++) {
+	//totalSize += 4 * sizeof(intT); // const -1, vertID, outDeg, inDeg
+	totalSize += graph.V[i].getFakeDegree() * sizeof(intE) * 2; //save both src and dst
+    }
+    totalSize += sizeof(long long); //totalSize itself
+    
+    printf("subgraph total size is: %ld\n", totalSize);
+    
+    void *buf = (void *)malloc(totalSize);
+    
+    char *ptr = (char *)buf;
+    
+    *(long long *)ptr = totalSize;
+    ptr += sizeof(long long);       
+    
+    for (intT i = 0; i < n; i++) {
+	for (intT j = 0; j < graph.V[i].getFakeDegree(); j++) {
+	    *(intE *)ptr = i;
+	    ptr += sizeof(intE);
+	    *(intE *)ptr = graph.V[i].getOutNeighbor(j);
 	    ptr += sizeof(intE);
 	}
     }

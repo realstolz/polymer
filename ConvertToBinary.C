@@ -31,10 +31,10 @@ void convertToBin(graph<vertex> GA, int numOfShards) {
 	    totalSize += GA.V[i].getInDegree() * sizeof(intE);
 	}
 	totalSize += sizeof(intT) + sizeof(long long) * 2;
-
-	printf("Total size is: %ld\n", totalSize);
 	
 	void *buf = (void *)malloc(totalSize);
+
+	printf("Total size is: %ld %p\n", totalSize, buf);
 	
 	char *ptr = (char *)buf;
 
@@ -73,8 +73,20 @@ void convertToBin(graph<vertex> GA, int numOfShards) {
 	    }
 	}
 
+	long long sizeCheck = (long long)ptr - (long long)buf;
+
+	printf("size check: %ld %ld\n", sizeCheck, totalSize);
+
 	int fd = open(fileName, O_RDWR | O_CREAT, S_IWRITE | S_IREAD);
-	write(fd, buf, totalSize);
+	long long written = 0;
+	while (written < totalSize) {
+	    long long sizeWritten = write(fd, (void *)((char *)buf + written), totalSize - written);
+	    if (sizeWritten < 0) {
+		printf("oops\n");
+	    }	    
+	    written += sizeWritten;
+	    printf("wrote: %ld, accum: %ld\n", sizeWritten, written);
+	}
     }
 }
 

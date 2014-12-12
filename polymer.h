@@ -1270,11 +1270,9 @@ bool* edgeMapDenseBP(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
     int nextSwitchPoint = frontier->getSize(0);
     int currOffset = 0;
     int counter = 0;
-
     intT m = 0;
     intT outEdgesCount = 0;
     bool *nextB = next->b;
-    
     int startPos = 0;
     int endPos = numVertices;
     if (part) {
@@ -1290,18 +1288,18 @@ bool* edgeMapDenseBP(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *n
 	    currOffset += frontier->getSize(currNodeNum);
 	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
 	    currNodeNum++;
-	    currBitVector = frontier->getArr(currNodeNum);
-	}
-	m += G[i].getFakeDegree();
-	if (currBitVector[i-currOffset]) {
-	    intT d = G[i].getFakeDegree();
-	    for(intT j=0; j<d; j++){
-		uintT ngh = G[i].getOutNeighbor(j);
-		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh,j)) {
-		    next->setBit(ngh, true);
-		}
-	    }
-	}
+     	    currBitVector = frontier->getArr(currNodeNum);
+     	}
+     	m += G[i].getFakeDegree();
+     	if (currBitVector[i-currOffset]) {
+     	    intT d = G[i].getFakeDegree();
+     	    for(intT j=0; j<d; j++){
+     		uintT ngh = G[i].getOutNeighbor(j);
+     		if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateAtomic(i,ngh,j)) {
+     		    next->setBit(ngh, true);
+     		}
+     	    }
+     	}
     }
     return NULL;
 }

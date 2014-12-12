@@ -284,25 +284,25 @@ void *BeliefPropagationSubWorker(void *arg) {
 	if (subTid == 0)
 	    Frontier->calculateNumOfNonZero(tid);
 	if (subTid == 0) {
-	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	
 	pthread_barrier_wait(&global_barr);
 
 	vertexMap(Frontier, BP_Vertex_Reset(vertD_next), tid, subTid, CORES_PER_NODE);
 	output->m = 1;
-
 	pthread_barrier_wait(&global_barr);	
 
-        edgeMapDenseBP(GA, Frontier, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, localOffsets),output,true,start,end);
-        //edgeMapDenseBPNoRep(GA, Frontier, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, localOffsets2,rangeLow),output,true,subworker);
+        //edgeMapDenseBP(GA, Frontier, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, localOffsets),output,true,start,end);
+        edgeMapDenseBPNoRep(GA, Frontier, BP_F<vertex>(edgeW, edgeD_curr, edgeD_next, vertI, vertD_curr, vertD_next, localOffsets2,rangeLow),output,true,subworker);
+	pthread_barrier_wait(&global_barr);
 
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
 
 	swap(edgeD_curr, edgeD_next);
 	swap(vertD_curr, vertD_next);
-	/*
+	
 	if (subworker.isSubMaster()) {
 	    pthread_barrier_wait(&global_barr);
 	    switchFrontier(tid, Frontier, output);
@@ -310,7 +310,7 @@ void *BeliefPropagationSubWorker(void *arg) {
 	    output = Frontier->getFrontier(tid);
 	    pthread_barrier_wait(&global_barr);
 	}
-	*/
+	
 	pthread_barrier_wait(&global_barr);
 	//pthread_barrier_wait(local_barr);
     }
@@ -353,6 +353,8 @@ void *BeliefPropagationThread(void *arg) {
 	localOffsets[i] = localOffsets[i-1] + fakeDegrees[i-1];
     }
 
+    intT numLocalEdge = localOffsets[localGraph.n - 1] + fakeDegrees[localGraph.n - 1];
+
     intT *localDegrees = (intT *)numa_alloc_local(sizeof(intT) * localGraph.n);
     intT *localOffsets2 = (intT *)numa_alloc_local(sizeof(intT) * localGraph.n);
 
@@ -366,7 +368,7 @@ void *BeliefPropagationThread(void *arg) {
 	localOffsets2[i] = localOffsets2[i-1] + localDegrees[i-1];
     }
 
-    intT numLocalEdge = localOffsets2[rangeHi - rangeLow - 1] + localDegrees[rangeHi - rangeLow - 1];
+    numLocalEdge = localOffsets2[rangeHi - rangeLow - 1] + localDegrees[rangeHi - rangeLow - 1];
     printf ("numLocalEdge of %d: %d\n", tid, numLocalEdge);
 
     EdgeWeight *edgeW = (EdgeWeight *)numa_alloc_local(sizeof(EdgeWeight) * numLocalEdge);
@@ -494,6 +496,7 @@ void *BeliefPropagationThread(void *arg) {
 
     pthread_barrier_wait(&barr);
     pthread_barrier_wait(&timerBarr);
+    printf("here we go\n");
 
     pthread_barrier_wait(&localBarr);
 
@@ -575,7 +578,7 @@ void BeliefPropagation(graph<vertex> &GA, int maxIter) {
     }
     shouldStart = 1;
     pthread_barrier_wait(&timerBarr);
-    //nextTime("Graph Partition");
+    nextTime("Graph Partition");
     startTime();
     printf("all created\n");
     for (int i = 0; i < numOfNode; i++) {

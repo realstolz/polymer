@@ -265,7 +265,7 @@ void *BFSSubWorker(void *arg) {
 	//pthread_barrier_wait(global_barr);
 	//apply edgemap
 	//gettimeofday(&startT, &tz);
-	edgeMapNoRep(GA, Frontier, BFS_F(parents), output, GA.m / 10, DENSE_PARALLEL, false, true, subworker);
+	edgeMapNoRep(GA, Frontier, BFS_F(parents), output, GA.m / 20, DENSE_PARALLEL, false, true, subworker);
 	subworker.localWait();
 	vertexCounter(GA, output, tid, subTid, CORES_PER_NODE);
 	//edgeMapSparseAsync(GA, Frontier, BFS_F(parents), output, subworker);

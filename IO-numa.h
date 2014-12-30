@@ -494,7 +494,12 @@ graph<vertex> loadGraphFromBin(char *fileName) {
     printf("totalSize is: %ld %p\n", totalSize, buf);
     lseek(fd, 0, SEEK_SET);
 
-    read(fd, buf, totalSize);
+    long long readSize = 0;
+    while (readSize < totalSize) {
+	long long readOnce = read(fd, (void *)((char *)buf + readSize), totalSize - readSize);
+	readSize += readOnce;
+	printf("read %ld, accum %ld\n", readOnce, readSize);
+    }
 
     char *ptr = (char *)buf;
     ptr += sizeof(long long);
@@ -550,6 +555,7 @@ graph<vertex> loadGraphFromBin(char *fileName) {
 	}
     }
     
+    free(buf);
     return graph<vertex>(vertices, (intT)n, m, edges);
 }
 
@@ -612,7 +618,100 @@ void dumpGraphToBin(graph<vertex> &graph, char *fileName) {
     }
     
     int fd = open(fileName, O_RDWR | O_CREAT, S_IWRITE | S_IREAD);
-    write(fd, buf, totalSize);
+    long long written = 0;
+    while (written < totalSize) {
+	long long sizeWritten = write(fd, (void *)((char *)buf + written), totalSize - written);
+	if (sizeWritten < 0) {
+	    printf("oops\n");
+	}	    
+	written += sizeWritten;
+	printf("wrote: %ld, accum: %ld\n", sizeWritten, written);
+    }
+}
+
+template<class vertex>
+void dumpPartitionInfo(graph<vertex> &graph, char * fileName, intT *sizeArr, int numOfNodes) {
+    int fd = open(fileName, O_RDWR | O_CREAT, S_IWRITE | S_IREAD);
+    if ((write(fd, sizeArr, sizeof(int) * numOfNodes)) < 0)
+	abort();
+
+    //check size arr
+    intT numOfVert = 0;
+    for (int i = 0; i < numOfNodes; i++) {
+	numOfVert += sizeArr[i];
+    }
+
+    if (numOfVert != graph.n) {
+	printf("size check wrong!!\n");
+	abort();
+    }
+
+    long long totalSize = 0;
+    for (intT i = 0; i < graph.n; i++) {
+	totalSize += 2 * sizeof(intT);
+    }
+
+    void *buf = (void *)malloc(totalSize);
+    char *ptr = (char *)buf;
+    
+    for (intT i = 0; i < graph.n; i++) {
+	*(intT *)ptr = graph.V[i].getOutDegree();
+	ptr += sizeof(intT);
+
+	*(intT *)ptr = graph.V[i].getInDegree();
+	ptr += sizeof(intT);
+    }
+
+    long long written = 0;
+    while (written < totalSize) {
+	long long sizeWritten = write(fd, (void *)((char *)buf + written), totalSize - written);
+	if (sizeWritten < 0) {
+	    printf("oops\n");
+	}	    
+	written += sizeWritten;
+    }
+}
+
+template <class vertex>
+graph<vertex> loadPartitionFromFile(char *fileName, intT *sizeArr, intT numOfNodes) {
+    int fd = open(fileName, O_RDONLY, S_IREAD);
+    read(fd, (void *)sizeArr, sizeof(intT) * numOfNodes);
+
+    long long totalSize = 0;
+    for (int i = 0; i < numOfNodes; i++) {
+	totalSize += sizeArr[i];
+    }
+
+    void *buf = (void *)malloc(totalSize * sizeof(intT) * 2);
+    printf("number of vert is: %ld %p\n", totalSize, buf);
+
+    long long readSize = 0;
+    while (readSize < totalSize) {
+	long long readOnce = read(fd, (void *)((char *)buf + readSize), totalSize - readSize);
+	readSize += readOnce;
+	printf("read %ld, accum %ld\n", readOnce, readSize);
+    }
+
+    const intT n = totalSize;
+    char *ptr = (char *)buf;
+
+    vertex *vertices = newA(vertex, n);
+    long long counter = 0;
+    long long inCounter = 0;
+
+    for (intT i = 0; i < n; i++) {
+	intT outDeg = *(intT *)ptr;
+	ptr += sizeof(intT);
+
+	intT inDeg = *(intT *)ptr;
+	ptr += sizeof(intT);
+	
+	vertices[i].setOutDegree(outDeg);
+	vertices[i].setInDegree(inDeg);
+    }
+    
+    free(buf);
+    return graph<vertex>(vertices, (intT)n, 0, NULL);
 }
 
 template <class vertex>
@@ -645,5 +744,12 @@ void dumpSubgraphToEdgeList(graph<vertex> &graph, char *fileName) {
     }
     
     int fd = open(fileName, O_RDWR | O_CREAT, S_IWRITE | S_IREAD);
-    write(fd, buf, totalSize);
+    long long written = 0;
+    while (written < totalSize) {
+	long long sizeWritten = write(fd, (void *)((char *)buf + written), totalSize - written);
+	if (sizeWritten < 0) {
+	    printf("oops\n");
+	}	    
+	written += sizeWritten;
+    }
 }

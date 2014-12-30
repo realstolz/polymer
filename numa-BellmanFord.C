@@ -179,7 +179,7 @@ void *BFSubWorker(void *arg) {
 	struct timeval startT, endT;
 	struct timezone tz = {0, 0};
 	gettimeofday(&startT, &tz);
-	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.m/10, DENSE_FORWARD, false, true, subworker);
+	edgeMap(GA, Frontier, BF_F(ShortestPathLen, Visited), output, GA.m/20, DENSE_FORWARD, false, true, subworker);
 	//pthread_barrier_wait(&global_barr);
 	subworker.globalWait();
         vertexMap(Frontier, BF_Vertex_F(Visited), tid, subTid, CORES_PER_NODE);

@@ -2439,3 +2439,4 @@ void vertexFilter(vertices *V, F filter, int nodeNum, int subNum, int totalSub, 
     //printf("filter over\n");
     writeAdd(&(result->m), m);
 }
+

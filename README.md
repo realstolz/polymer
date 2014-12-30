@@ -1,3 +1,8 @@
+polymer
+=======
+
+A NUMA-aware Graph-structured Analytics Framework
+
 1. ABOUT POLYMER
 
 This code is part of the project "NUMA-aware Graph-structured Analytics",
@@ -70,7 +75,6 @@ After that use the following command to run the algorithms:
       BellmanFord:	     ./numa-BellmanFord [graph file] [start vertex number]
       ConnectedComponents:   ./numa-Components [graph file]
       
-
 3. INPUT FORMAT
 The input format of an unweighted graphs should be in following format.
 

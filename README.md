@@ -1,3 +1,8 @@
+polymer
+=======
+
+A NUMA-aware Graph-structured Analytics Framework
+
 1. ABOUT POLYMER
 
 This code is part of the project "NUMA-aware Graph-structured Analytics",

@@ -11,14 +11,12 @@ Currently, Polymer has implemeted six popular graph algorithms files, including 
 
 To develop a new implementation, simply include "polymer.h" in the implementation files. When finished, one may add it to the ALL variable in Makefile.
 
-License
+LICENSE
 =======
 
 Polymwer is released under the Apache 2 license.
 
-Academic and Conference Papers
-=======
-
+If you use GraphLab PowerGraph in your research, please cite our paper:
 Kaiyuan Zhang, Rong Chen and Haibo Chen. NUMA-aware Graph-structured Analytics. ACM SIGPLAN Symposium on Principles and Practice of Parallel Programming (PPoPP'15), Bay Area, California, USA, February, 2015. 
 
 BUILD & RUN

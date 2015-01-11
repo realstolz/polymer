@@ -65,11 +65,7 @@ The adjacency graph format from the Problem Based Benchmark Suite (http://www.cs
 CONTACT
 =======
 
-Website: http://ipads.se.sjtu.edu.cn/projects/polymer.html
-
-Kaiyuan Zhang <johnzh@sjtu.edu.cn>
-Rong Chen <rongchen@sjtu.edu.cn>
-Haibo Chen <haibochen@sjtu.edu.cn>
+Polymer's Homepage: http://ipads.se.sjtu.edu.cn/projects/polymer.html
 
 
 ACKNOWLEDGEMENT

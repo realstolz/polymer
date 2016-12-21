@@ -30,6 +30,7 @@
 #include <pthread.h>
 #include <sys/mman.h>
 #include <numa.h>
+#include <sys/syscall.h>
 
 //#include <papi.h>
 #define NUM_EVENTS 3
@@ -247,6 +248,12 @@ void *PageRankSubWorker(void *arg) {
     int maxIter = my_arg->maxIter;
     int tid = my_arg->tid;
     int subTid = my_arg->subTid;
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(tid * CORES_PER_NODE + subTid, &cpuset);
+    sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &cpuset);
+
     pthread_barrier_t *local_barr = my_arg->node_barr;
     LocalFrontier *output = my_arg->localFrontier;
 
@@ -488,6 +495,9 @@ void *PageRankThread(void *arg) {
         arg->startPos = startPos;
         arg->endPos = startPos + sizeOfShards[i];
         startPos = arg->endPos;
+
+        cout << "Create thread" << i << " on Node" << tid << endl;
+
         pthread_create(&subTids[i], NULL, PageRankSubWorker<vertex>, (void *) arg);
     }
 
@@ -559,9 +569,9 @@ struct PR_Hash_F {
 
 template<class vertex>
 void PageRank(graph<vertex> &GA, int maxIter) {
-    numOfNode = numa_num_configured_nodes();
+//    numOfNode = numa_num_configured_nodes();
     vPerNode = GA.n / numOfNode;
-    CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
+//    CORES_PER_NODE = numa_num_configured_cpus() / numOfNode;
     if (NODE_USED != -1)
         numOfNode = NODE_USED;
     pthread_barrier_init(&barr, NULL, numOfNode);
@@ -608,6 +618,9 @@ void PageRank(graph<vertex> &GA, int maxIter) {
         arg->rangeLow = prev;
         arg->rangeHi = prev + sizeArr[i];
         prev = prev + sizeArr[i];
+
+        cout << "Create thread on Node" << i << endl;
+
         pthread_create(&tids[i], NULL, PageRankThread<vertex>, (void *) arg);
     }
     shouldStart = 1;
@@ -635,12 +648,16 @@ int parallel_main(int argc, char *argv[]) {
     bool symmetric = false;
     int maxIter = 20;
     needResult = false;
-    if (argc > 1) iFile = argv[1];
-    if (argc > 2) maxIter = atoi(argv[2]);
-    if (argc > 3) NODE_USED = atoi(argv[3]);
-    if (argc > 4) if ((string) argv[4] == (string) "-result") needResult = true;
-    if (argc > 5) if ((string) argv[5] == (string) "-s") symmetric = true;
-    if (argc > 6) if ((string) argv[6] == (string) "-b") binary = true;
+
+    iFile = argv[1];
+    maxIter = atoi(argv[2]);
+    numOfNode = atoi(argv[3]);
+    CORES_PER_NODE = atoi(argv[4]);
+
+//    if (argc > 3) NODE_USED = atoi(argv[3]);
+//    if (argc > 4) if ((string) argv[4] == (string) "-result") needResult = true;
+//    if (argc > 5) if ((string) argv[5] == (string) "-s") symmetric = true;
+//    if (argc > 6) if ((string) argv[6] == (string) "-b") binary = true;
     numa_set_interleave_mask(numa_all_nodes_ptr);
     startTime();
     if (symmetric) {

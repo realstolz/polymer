@@ -605,8 +605,6 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     }
     //return;
 
-    cout << "hoge1" << endl;
-
     p_curr_global = (double *) mapDataArray(numOfNode, sizeArr, sizeof(double));
     p_next_global = (double *) mapDataArray(numOfNode, sizeArr, sizeof(double));
 
@@ -675,7 +673,8 @@ int parallel_main(int argc, char *argv[]) {
                 readGraph<asymmetricVertex>(iFile, symmetric, binary);
         const auto end = chrono::system_clock::now();
 
-        cout << "elapsed: " << (end - start).count() << endl;
+        chrono:duration<double> elapsed = end - start;
+        cout << "elapsed: " << elapsed.count() << endl;
 
         PageRank(G, maxIter);
         //G.del();

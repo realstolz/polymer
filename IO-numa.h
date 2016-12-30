@@ -154,8 +154,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
     std::vector<intE> in_gap_edges(m);
 
     auto add_in_edges = [&](intE from, intE to) {
-        std::lock_guard <std::mutex> lock(std::get<1>(listed_in_edges[from]));
-        std::get<0>(listed_in_edges[from]).emplace_back(to);
+        std::lock_guard <std::mutex> lock(std::get<1>(listed_in_edges[to]));
+        std::get<0>(listed_in_edges[to]).emplace_back(from);
     };
 
     { parallel_for (long i = 0; i < n; i++) out_offsets[i] = atol(W.Strings[i + 3]); }
@@ -171,14 +171,14 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
         if(degree > 0) {
             out_gap_edges[offset] = get_and_memo_edge(offset);
-            add_in_edges(out_edges[offset], i);
+            add_in_edges(i, out_edges[offset]);
         }
 
         v[i].setOutDegree(degree);
         v[i].setOutNeighbors(out_gap_edges.data() + offset);
         for (long j = offset + 1; j < upper; j++) {
             out_gap_edges[j] = get_and_memo_edge(j) - out_edges[j - 1];
-            add_in_edges(out_edges[j], i);
+            add_in_edges(i, out_edges[j]);
         }
     }
     {
@@ -189,14 +189,14 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
         if(degree > 0) {
             out_gap_edges[offset] = get_and_memo_edge(offset);
-            add_in_edges(out_edges[offset], last);
+            add_in_edges(last, out_edges[offset]);
         }
 
         v[last].setOutDegree(degree);
         v[last].setOutNeighbors(out_gap_edges.data() + offset);
         for (long j = offset + 1; j < upper; j++) {
             out_gap_edges[j] = get_and_memo_edge(j) - out_edges[j - 1];
-            add_in_edges(out_edges[j], last);
+            add_in_edges(last, out_edges[j]);
         }
     }
 

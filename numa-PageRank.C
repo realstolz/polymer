@@ -32,6 +32,7 @@
 #include <numa.h>
 #include <sys/syscall.h>
 
+#include <string>
 #include <chrono>
 
 //#include <papi.h>
@@ -256,8 +257,13 @@ void *PageRankSubWorker(void *arg) {
     CPU_ZERO(&cpuset);
     int P_CORES_PER_NODE = CORES_PER_NODE / 2;
     int offset = subTid < P_CORES_PER_NODE ? 0 : numOfNode * P_CORES_PER_NODE;
-    CPU_SET(tid * P_CORES_PER_NODE + subTid + offset, &cpuset);
+    int core = tid * P_CORES_PER_NODE + subTid + offset;
+    CPU_SET(core, &cpuset);
     sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &cpuset);
+
+    cout << "Node: " + to_string(tid)
+            + ", Thread: " + to_string(subTid)
+            + " on core" + to_string(core) << endl;
 
     pthread_barrier_t *local_barr = my_arg->node_barr;
     LocalFrontier *output = my_arg->localFrontier;
@@ -501,8 +507,6 @@ void *PageRankThread(void *arg) {
         arg->endPos = startPos + sizeOfShards[i];
         startPos = arg->endPos;
 
-        cout << "Create thread" << i << " on Node" << tid << endl;
-
         pthread_create(&subTids[i], NULL, PageRankSubWorker<vertex>, (void *) arg);
     }
 
@@ -623,7 +627,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
         arg->rangeHi = prev + sizeArr[i];
         prev = prev + sizeArr[i];
 
-        cout << "Create thread on Node" << i << endl;
+        cout << "Create thread on Node" + to_string(i) << endl;
 
         pthread_create(&tids[i], NULL, PageRankThread<vertex>, (void *) arg);
     }

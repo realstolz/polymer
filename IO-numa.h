@@ -34,7 +34,6 @@
 #include "parallel.h"
 #include "quickSort.h"
 
-#include <array>
 #include <forward_list>
 #include <tuple>
 #include <mutex>
@@ -142,16 +141,16 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         abort();
     }
 
-    std::array <vertex, n> v;
+    std::vector <vertex> v(n);
 
-    std::array <intT, n> out_offsets;
-    std::array <intE, m> out_edges;
-    std::array <intE, m> out_gap_edges;
+    std::vector <intT> out_offsets(n);
+    std::vector <intE> out_edges(m);
+    std::vector <intE> out_gap_edges(m);
 
-    std::array < std::tuple < std::forward_list < intE > , std::mutex >, n > listed_in_edges;
-//    std::array<intT, n> in_offsets;
-//    std::array<intE, m> in_edges;
-    std::array <intE, m> in_gap_edges;
+    std::vector < std::tuple < std::forward_list < intE > , std::mutex >> listed_in_edges(n);
+//    std::vector<intT> in_offsets(n);
+//    std::vector<intE> in_edges(m);
+    std::vector <intE> in_gap_edges(m);
 
     auto add_in_edges = [&](long from, intE to) {
         std::lock_guard <std::mutex> lock(std::get<1>(listed_in_edges[from]));

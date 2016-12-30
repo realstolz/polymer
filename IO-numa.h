@@ -206,7 +206,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         auto edges = std::get<0>(listed_in_edges[i]);
         auto size = edges.size();
         v[i].setInDegree(size);
-        v[i].setInNeighbors(&in_gap_edges[offset]);
+//        v[i].setInNeighbors(in_gap_edges.data() + offset);
+        v[i].setInNeighbors(in_gap_edges + offset);
         std::sort(edges.begin(), edges.end());
         long prev = 0;
         for (int j = 0; j < size; j++) {

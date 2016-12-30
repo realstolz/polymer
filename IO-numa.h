@@ -160,13 +160,13 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
     { parallel_for (long i = 0; i < n; i++) out_offsets[i] = atol(W.Strings[i + 3]); }
 
     const int skip_lines = 3;
-    auto get_and_memo_edge = [&](intE i, intE offset) {
-        return out_edges[offset + i] = atol(W.Strings[skip_lines + n + i]);
+    auto get_and_memo_edge = [&](intE i) {
+        return out_edges[i] = atol(W.Strings[skip_lines + n + i]);
     };
     parallel_for (long i = 0; i < n; i++) {
         auto offset = out_offsets[i];
         auto upper = out_offsets[i + 1];
-        out_gap_edges[offset] = get_and_memo_edge(i, offset);
+        out_gap_edges[offset] = get_and_memo_edge(offset);
         v[i].setOutDegree(upper - offset);
         v[i].setOutNeighbors(&out_gap_edges[0] + offset);
         add_in_edges(out_edges[offset], i);
@@ -178,7 +178,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
     {
         auto last = n - 1;
         auto offset = out_offsets[last];
-        out_gap_edges[offset] = get_and_memo_edge(last, offset);
+        out_gap_edges[offset] = get_and_memo_edge(offset);
         v[last].setOutDegree(m - offset);
         v[last].setOutNeighbors(&out_gap_edges[0] + offset);
         add_in_edges(out_edges[offset], last);

@@ -168,7 +168,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         auto upper = out_offsets[i + 1];
         out_gap_edges[offset] = get_and_memo_edge(offset);
         v[i].setOutDegree(upper - offset);
-        v[i].setOutNeighbors(&out_gap_edges[0] + offset);
+        v[i].setOutNeighbors(out_gap_edges.data() + offset);
         add_in_edges(out_edges[offset], i);
         for (long j = offset + 1; j < upper; j++) {
             out_gap_edges[j] = get_and_memo_edge(j) - out_edges[j - 1];
@@ -180,7 +180,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         auto offset = out_offsets[last];
         out_gap_edges[offset] = get_and_memo_edge(offset);
         v[last].setOutDegree(m - offset);
-        v[last].setOutNeighbors(&out_gap_edges[0] + offset);
+        v[last].setOutNeighbors(out_gap_edges.data() + offset);
         add_in_edges(out_edges[offset], last);
         for (long j = offset + 1; j < m; j++) {
             out_gap_edges[j] = get_and_memo_edge(j) - out_edges[j - 1];
@@ -190,8 +190,10 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
     long offset = 0;
     for (long i = 0; i < n; i++) {
-        auto edges = std::get<0>(listed_in_edges[n]);
+        auto edges = std::get<0>(listed_in_edges[i]);
         auto size = edges.size();
+        v[i].setInDegree(size);
+        v[i].setInNeighbors(&in_gap_edges[offset]);
         std::sort(edges.begin(), edges.end());
         long prev = 0;
         for (int j = 0; j < size; j++) {
@@ -201,7 +203,9 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         offset += size;
     }
 
-    return graph<vertex>(v, (intT) n, m, &out_gap_edges[0], &in_gap_edges[0]);
+    //TODO: make all edge storage std::vector<std::vector<intE>> (?)
+
+    return graph<vertex>(v.data(), (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
 
 /*
     for (long i = 0; i < m; i++) {

@@ -143,18 +143,18 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
     cout << "0" << endl;
 //    std::vector <vertex> v(n);
-    auto v = newA(vertex, n);
+    vertex *v = newA(vertex, n);
 
     std::vector <intT> out_offsets(n);
     std::vector <intE> out_edges(m);
 //    std::vector <intE> out_gap_edges(m);
-    auto out_gap_edges = newA(intE, m);
+    intE *out_gap_edges = newA(intE, m);
 
     std::vector < std::tuple < std::vector < intE > , std::mutex >> listed_in_edges(n);
 //    std::vector<intT> in_offsets(n);
 //    std::vector<intE> in_edges(m);
 //    std::vector <intE> in_gap_edges(m);
-    auto in_gap_edges = newA(intE, m);
+    intE *in_gap_edges = newA(intE, m);
 
     auto add_in_edges = [&](intE from, intE to) {
         std::lock_guard <std::mutex> lock(std::get<1>(listed_in_edges[from]));

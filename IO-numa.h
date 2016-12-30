@@ -34,7 +34,7 @@
 #include "parallel.h"
 #include "quickSort.h"
 
-#include <forward_list>
+#include <vector>
 #include <tuple>
 #include <mutex>
 #include <algorithm>
@@ -147,14 +147,14 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
     std::vector <intE> out_edges(m);
     std::vector <intE> out_gap_edges(m);
 
-    std::vector < std::tuple < std::forward_list < intE > , std::mutex >> listed_in_edges(n);
+    std::vector < std::tuple < std::vector < intE > , std::mutex >> listed_in_edges(n);
 //    std::vector<intT> in_offsets(n);
 //    std::vector<intE> in_edges(m);
     std::vector <intE> in_gap_edges(m);
 
     auto add_in_edges = [&](long from, intE to) {
         std::lock_guard <std::mutex> lock(std::get<1>(listed_in_edges[from]));
-        std::get<0>(listed_in_edges[from]).push_front(to);
+        std::get<0>(listed_in_edges[from]).emplace_back(to);
     };
 
     { parallel_for (long i = 0; i < n; i++) out_offsets[i] = atol(W.Strings[i + 3]); }

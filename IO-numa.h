@@ -215,6 +215,10 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
             prev = edges[j];
         }
         offset += size;
+
+        if(i % 1000 == 0 || i == n - 1) {
+            cout << offset << endl;
+        }
     }
 
     cout << "4" << endl;

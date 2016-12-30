@@ -141,6 +141,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         abort();
     }
 
+    cout << "0" << endl;
 //    std::vector <vertex> v(n);
     vertex *v = newA(vertex, n);
 
@@ -160,6 +161,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
     { parallel_for (long i = 0; i < n; i++) out_offsets[i] = atol(W.Strings[i + 3]); }
 
+    cout << "1" << endl;
+
     const int skip_lines = 3;
     auto get_and_memo_edge = [&](intE i) {
         return out_edges[i] = atol(W.Strings[skip_lines + n + i]);
@@ -176,6 +179,9 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
             add_in_edges(out_edges[j], i);
         }
     }
+
+    cout << "2" << endl;
+
     {
         auto last = n - 1;
         auto offset = out_offsets[last];
@@ -188,6 +194,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
             add_in_edges(out_edges[j], last);
         }
     }
+
+    cout << "3" << endl;
 
     long offset = 0;
     for (long i = 0; i < n; i++) {
@@ -203,6 +211,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         }
         offset += size;
     }
+
+    cout << "4" << endl;
 
     //TODO: make all edge storage std::vector<std::vector<intE>> (?)
 

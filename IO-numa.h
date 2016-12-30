@@ -216,7 +216,11 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
     //TODO: make all edge storage std::vector<std::vector<intE>> (?)
 
-    return graph<vertex>(v, (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
+    cout << out_gap_edges.data() << endl;
+    cout << in_gap_edges.data() << endl;
+
+    auto g = graph<vertex>(v, (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
+    return g;
 
 /*
     for (long i = 0; i < m; i++) {

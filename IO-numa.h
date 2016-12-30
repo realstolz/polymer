@@ -229,6 +229,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 //    cout << in_gap_edges.data() << endl;
     cout << out_gap_edges << endl;
     cout << in_gap_edges << endl;
+    cout << in_gap_edges + offset << endl;
     cout << listed_in_edges.data() << endl;
     cout << out_edges.data() << endl;
     cout << out_offsets.data() << endl;

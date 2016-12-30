@@ -581,7 +581,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     int sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
     //graphHasher(GA, hasher);
-    graphAllEdgeHasher(GA, hasher);
+    //graphAllEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
     /*
     intT vertPerPage = PAGESIZE / sizeof(double);

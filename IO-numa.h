@@ -141,7 +141,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         abort();
     }
 
-    std::vector <vertex> v(n);
+//    std::vector <vertex> v(n);
+    vertex *v = newA(vertex, n);
 
     std::vector <intT> out_offsets(n);
     std::vector <intE> out_edges(m);
@@ -205,7 +206,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
     //TODO: make all edge storage std::vector<std::vector<intE>> (?)
 
-    return graph<vertex>(v.data(), (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
+    return graph<vertex>(v, (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
 
 /*
     for (long i = 0; i < m; i++) {

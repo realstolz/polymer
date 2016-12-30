@@ -673,7 +673,7 @@ int parallel_main(int argc, char *argv[]) {
                 readGraph<asymmetricVertex>(iFile, symmetric, binary);
         const auto end = chrono::system_clock::now();
 
-        chrono:duration<double> elapsed = end - start;
+        chrono::duration<double> elapsed = end - start;
         cout << "elapsed: " << elapsed.count() << endl;
 
         PageRank(G, maxIter);

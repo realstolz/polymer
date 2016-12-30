@@ -34,6 +34,12 @@
 #include "parallel.h"
 #include "quickSort.h"
 
+#include <array>
+#include <forward_list>
+#include <tuple>
+#include <mutex>
+#include <algorithm>
+
 using namespace std;
 
 typedef pair <uintE, uintE> intPair;
@@ -136,22 +142,72 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         abort();
     }
 
-    intT *offsets = newA(intT, n);
-    intE *edges = newA(intE, m);
+    std::array <vertex, n> v;
 
-    { parallel_for (long i = 0; i < n; i++) offsets[i] = atol(W.Strings[i + 3]); }
-    { parallel_for (long i = 0; i < m; i++) edges[i] = atol(W.Strings[i + n + 3]); }
-    //W.del(); // to deal with performance bug in malloc
+    std::array <intT, n> out_offsets;
+    std::array <intE, m> out_edges;
+    std::array <intE, m> out_gap_edges;
 
-    vertex *v = newA(vertex, n);
+    std::array < std::tuple < std::forward_list < intE > , std::mutex >, n > listed_in_edges;
+//    std::array<intT, n> in_offsets;
+//    std::array<intE, m> in_edges;
+    std::array <intE, m> in_gap_edges;
 
-    {
-        parallel_for (uintT i = 0; i < n; i++) {
-            uintT o = offsets[i];
-            uintT l = ((i == n - 1) ? m : offsets[i + 1]) - offsets[i];
-            v[i].setOutDegree(l);
-            v[i].setOutNeighbors(edges + o);
+    auto add_in_edges = [&](long from, intE to) {
+        std::lock_guard <std::mutex> lock(std::get<1>(listed_in_edges[from]));
+        std::get<0>(listed_in_edges[from]).push_front(to);
+    };
+
+    { parallel_for (long i = 0; i < n; i++) out_offsets[i] = atol(W.Strings[i + 3]); }
+
+    const int skip_lines = 3;
+    auto get_and_memo_edge = [&](long i, long offset) {
+        return out_edges[offset + i] = atol(W.Strings[skip_lines + n + i]);
+    };
+    parallel_for (long i = 0; i < n; i++) {
+        auto offset = out_offsets[i];
+        auto upper = out_offsets[i + 1];
+        out_gap_edges[offset] = get_and_memo_edge(i, offset);
+        v[i].setOutDegree(upper - offset);
+        v[i].setOutNeighbors(&out_gap_edges[0] + offset);
+        add_in_edges(out_edges[offset], i);
+        for (long j = offset + 1; j < upper; j++) {
+            out_gap_edges[j] = get_and_memo_edge(j) - out_edges[j - 1];
+            add_in_edges(out_edges[j], i);
         }
+    }
+    {
+        auto last = n - 1;
+        auto offset = out_offsets[last];
+        out_gap_edges[offset] = get_and_memo_edge(last, offset);
+        v[last].setOutDegree(m - offset);
+        v[last].setOutNeighbors(&out_gap_edges[0] + offset);
+        add_in_edges(out_edges[offset], last);
+        for (long j = offset + 1; j < m; j++) {
+            out_gap_edges[j] = get_and_memo_edge(j) - out_edges[j - 1];
+            add_in_edges(out_edges[j], last);
+        }
+    }
+
+    long offset = 0;
+    for (long i = 0; i < n; i++) {
+        auto edges = std::get<0>(listed_in_edges[n]);
+        auto size = edges.size();
+        std::sort(edges.begin(), edges.end());
+        long prev = 0;
+        for (int j = 0; j < size; j++) {
+            in_gap_edges[offset + j] = edges[j] - prev;
+            prev = edges[j];
+        }
+        offset += size;
+    }
+
+    return graph<vertex>(v, (intT) n, m, out_gap_edges, in_gap_edges);
+
+/*
+    for (long i = 0; i < m; i++) {
+        // cout << out_edges[i] << endl;
+        // cout << out_gap_edges[i] << endl;
     }
 
     if (!isSymmetric) {
@@ -161,13 +217,13 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         intPair *temp = newA(intPair, m);
         {
             parallel_for (intT i = 0; i < n; i++) {
-                uintT o = offsets[i];
+                uintT o = out_offsets[i];
                 for (intT j = 0; j < v[i].getOutDegree(); j++) {
                     temp[o + j] = make_pair(v[i].getOutNeighbor(j), i);
                 }
             }
         }
-        free(offsets);
+        free(out_offsets);
 
         quickSort(temp, m, pairFirstCmp<intE>());
 
@@ -199,11 +255,12 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         }
 
         free(tOffsets);
-        return graph<vertex>(v, (intT) n, m, edges, inEdges);
+        return graph<vertex>(v, (intT) n, m, out_gap_edges, inEdges);
     } else {
-        free(offsets);
-        return graph<vertex>(v, (intT) n, m, edges);
+        free(out_offsets);
+        return graph<vertex>(v, (intT) n, m, out_gap_edges);
     }
+    */
 }
 
 template<class vertex>

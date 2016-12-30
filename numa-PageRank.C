@@ -223,8 +223,9 @@ bool *edgeMapDenseForwardOTHER(graph<vertex> GA, vertices *frontier, F f, LocalF
         if (currBitVector[i - currOffset]) {
             intT d = G[i].getFakeDegree();
             double val = f.getCurrVal(i);
+            uintT ngh = 0;
             for (intT j = 0; j < d; j++) {
-                uintT ngh = G[i].getOutNeighbor(j);
+                ngh += G[i].getOutNeighbor(j);
                 if (/*next->inRange(ngh) &&*/ f.cond(ngh) && f.updateValVer(i, val, ngh)) {
                     /*
                     if (!next->getBit(ngh)) {

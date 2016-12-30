@@ -115,7 +115,6 @@ struct graph {
             : V(VV), n(nn), m(mm), allocatedInplace(ai), inEdges(_inEdges), flags(NULL) {}
 
     void del() {
-        cout << "del in graph" << endl;
         if (flags != NULL) free(flags);
         if (allocatedInplace == NULL)
             for (intT i = 0; i < n; i++) V[i].del();

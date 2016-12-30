@@ -671,8 +671,6 @@ int parallel_main(int argc, char *argv[]) {
         graph<asymmetricVertex> G =
                 readGraph<asymmetricVertex>(iFile, symmetric, binary);
 
-        cout << "hoge0" << endl;
-
         PageRank(G, maxIter);
         //G.del();
     }

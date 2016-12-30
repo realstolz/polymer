@@ -230,6 +230,9 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
 //    auto g = graph<vertex>(v, (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
     auto g = graph<vertex>(v, (intT) n, m, out_gap_edges, in_gap_edges);
+
+    cout << "5" << endl;
+
     return g;
 
 /*

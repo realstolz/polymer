@@ -603,7 +603,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     }
     //return;
 
-    cout << "6" << endl;
+    cout << "hoge1" << endl;
 
     p_curr_global = (double *) mapDataArray(numOfNode, sizeArr, sizeof(double));
     p_next_global = (double *) mapDataArray(numOfNode, sizeArr, sizeof(double));
@@ -671,7 +671,7 @@ int parallel_main(int argc, char *argv[]) {
         graph<asymmetricVertex> G =
                 readGraph<asymmetricVertex>(iFile, symmetric, binary);
 
-        cout << "5" << endl;
+        cout << "hoge0" << endl;
 
         PageRank(G, maxIter);
         //G.del();

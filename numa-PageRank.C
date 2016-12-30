@@ -256,7 +256,7 @@ void *PageRankSubWorker(void *arg) {
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     int P_CORES_PER_NODE = CORES_PER_NODE / 2;
-    int offset = subTid < P_CORES_PER_NODE ? 0 : numOfNode * P_CORES_PER_NODE;
+    int offset = subTid < P_CORES_PER_NODE ? 0 : (numOfNode - 1) * P_CORES_PER_NODE;
     int core = tid * P_CORES_PER_NODE + subTid + offset;
     CPU_SET(core, &cpuset);
     sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &cpuset);

@@ -201,7 +201,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         offset += size;
     }
 
-    return graph<vertex>(v, (intT) n, m, out_gap_edges, in_gap_edges);
+    return graph<vertex>(v, (intT) n, m, &out_gap_edges[0], &in_gap_edges[0]);
 
 /*
     for (long i = 0; i < m; i++) {

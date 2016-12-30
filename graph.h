@@ -58,8 +58,8 @@ struct asymmetricVertex {
     intT inDegree;
 
     void del() {
-        free(inNeighbors);
-        free(outNeighbors);
+//        free(inNeighbors);
+//        free(outNeighbors);
     }
 
     asymmetricVertex(intE *iN, intE *oN, intT id, intT od) : inNeighbors(iN), outNeighbors(oN), inDegree(id),

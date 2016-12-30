@@ -152,7 +152,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 //    std::vector<intE> in_edges(m);
     std::vector <intE> in_gap_edges(m);
 
-    auto add_in_edges = [&](long from, intE to) {
+    auto add_in_edges = [&](intE from, intE to) {
         std::lock_guard <std::mutex> lock(std::get<1>(listed_in_edges[from]));
         std::get<0>(listed_in_edges[from]).emplace_back(to);
     };
@@ -160,7 +160,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
     { parallel_for (long i = 0; i < n; i++) out_offsets[i] = atol(W.Strings[i + 3]); }
 
     const int skip_lines = 3;
-    auto get_and_memo_edge = [&](long i, long offset) {
+    auto get_and_memo_edge = [&](intE i, intE offset) {
         return out_edges[offset + i] = atol(W.Strings[skip_lines + n + i]);
     };
     parallel_for (long i = 0; i < n; i++) {

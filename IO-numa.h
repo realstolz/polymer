@@ -201,6 +201,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
     cout << "3" << endl;
 
+    long tmp_size = 0;
+
     long offset = 0;
     for (long i = 0; i < n; i++) {
         auto edges = std::get<0>(listed_in_edges[i]);
@@ -218,6 +220,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
         if(i % 10000 == 0 || i == n - 1) {
             cout << offset << endl;
+            cout << size << endl;
+            tmp_size = size;
         }
     }
 
@@ -230,6 +234,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
     cout << out_gap_edges << endl;
     cout << in_gap_edges << endl;
     cout << in_gap_edges + offset << endl;
+    cout << in_gap_edges + offset + tmp_size << endl;
     cout << listed_in_edges.data() << endl;
     cout << out_edges.data() << endl;
     cout << out_offsets.data() << endl;

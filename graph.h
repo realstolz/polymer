@@ -57,10 +57,7 @@ struct asymmetricVertex {
     intT fakeOutDegree;
     intT inDegree;
 
-    void del() {
-//        free(inNeighbors);
-//        free(outNeighbors);
-    }
+    void del() {}
 
     asymmetricVertex(intE *iN, intE *oN, intT id, intT od) : inNeighbors(iN), outNeighbors(oN), inDegree(id),
                                                              outDegree(od) {}
@@ -116,11 +113,6 @@ struct graph {
 
     void del() {
         if (flags != NULL) free(flags);
-        if (allocatedInplace == NULL)
-            for (intT i = 0; i < n; i++) V[i].del();
-        else free(allocatedInplace);
-        free(V);
-        if (inEdges != NULL) free(inEdges);
     }
 
     void transpose() {

@@ -216,7 +216,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         }
         offset += size;
 
-        if(i % 1000 == 0 || i == n - 1) {
+        if(i % 10000 == 0 || i == n - 1) {
             cout << offset << endl;
         }
     }
@@ -232,6 +232,7 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
     cout << listed_in_edges.data() << endl;
     cout << out_edges.data() << endl;
     cout << out_offsets.data() << endl;
+    cout << v << endl;
 
 //    auto g = graph<vertex>(v, (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
     auto g = graph<vertex>(v, (intT) n, m, out_gap_edges, in_gap_edges);

@@ -677,13 +677,16 @@ int parallel_main(int argc, char *argv[]) {
         const auto start = chrono::system_clock::now();
         graph<asymmetricVertex> G =
                 readGraph<asymmetricVertex>(iFile, symmetric, binary);
-        const auto end = chrono::system_clock::now();
-
-        chrono::duration<double> elapsed = end - start;
-        cout << "elapsed: " << elapsed.count() << endl;
+        const auto mid = chrono::system_clock::now();
 
         PageRank(G, maxIter);
         //G.del();
+        const auto end = chrono::system_clock::now();
+
+        chrono::duration<double> prepro = mid - start;
+        chrono::duration<double> pr = end - mid;
+        cout << "preprocessing: " << prepro.count() << endl;
+        cout << "PR: " << pr.count() << endl;
     }
     return 0;
 }

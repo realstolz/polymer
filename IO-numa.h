@@ -143,16 +143,18 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
     cout << "0" << endl;
 //    std::vector <vertex> v(n);
-    vertex *v = newA(vertex, n);
+    auto v = newA(vertex, n);
 
     std::vector <intT> out_offsets(n);
     std::vector <intE> out_edges(m);
-    std::vector <intE> out_gap_edges(m);
+//    std::vector <intE> out_gap_edges(m);
+    auto out_gap_edges = newA(intE*, m);
 
     std::vector < std::tuple < std::vector < intE > , std::mutex >> listed_in_edges(n);
 //    std::vector<intT> in_offsets(n);
 //    std::vector<intE> in_edges(m);
-    std::vector <intE> in_gap_edges(m);
+//    std::vector <intE> in_gap_edges(m);
+    auto in_gap_edges = newA(intE*, m);
 
     auto add_in_edges = [&](intE from, intE to) {
         std::lock_guard <std::mutex> lock(std::get<1>(listed_in_edges[from]));
@@ -172,7 +174,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         auto upper = out_offsets[i + 1];
         out_gap_edges[offset] = get_and_memo_edge(offset);
         v[i].setOutDegree(upper - offset);
-        v[i].setOutNeighbors(out_gap_edges.data() + offset);
+//        v[i].setOutNeighbors(out_gap_edges.data() + offset);
+        v[i].setOutNeighbors(out_gap_edges + offset);
         add_in_edges(out_edges[offset], i);
         for (long j = offset + 1; j < upper; j++) {
             out_gap_edges[j] = get_and_memo_edge(j) - out_edges[j - 1];
@@ -187,7 +190,8 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
         auto offset = out_offsets[last];
         out_gap_edges[offset] = get_and_memo_edge(offset);
         v[last].setOutDegree(m - offset);
-        v[last].setOutNeighbors(out_gap_edges.data() + offset);
+//        v[last].setOutNeighbors(out_gap_edges.data() + offset);
+        v[last].setOutNeighbors(out_gap_edges + offset);
         add_in_edges(out_edges[offset], last);
         for (long j = offset + 1; j < m; j++) {
             out_gap_edges[j] = get_and_memo_edge(j) - out_edges[j - 1];
@@ -216,10 +220,13 @@ graph <vertex> readGraphFromFile(char *fname, bool isSymmetric) {
 
     //TODO: make all edge storage std::vector<std::vector<intE>> (?)
 
-    cout << out_gap_edges.data() << endl;
-    cout << in_gap_edges.data() << endl;
+//    cout << out_gap_edges.data() << endl;
+//    cout << in_gap_edges.data() << endl;
+    cout << out_gap_edges << endl;
+    cout << in_gap_edges << endl;
 
-    auto g = graph<vertex>(v, (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
+//    auto g = graph<vertex>(v, (intT) n, m, out_gap_edges.data(), in_gap_edges.data());
+    auto g = graph<vertex>(v, (intT) n, m, out_gap_edges, in_gap_edges);
     return g;
 
 /*

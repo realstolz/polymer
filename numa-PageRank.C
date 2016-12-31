@@ -32,6 +32,7 @@
 #include <numa.h>
 #include <sys/syscall.h>
 
+#include <sched.h>
 #include <string>
 #include <chrono>
 
@@ -261,9 +262,7 @@ void *PageRankSubWorker(void *arg) {
     CPU_SET(core, &cpuset);
     sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &cpuset);
 
-    cout << "Node: " + to_string(tid)
-            + ", Thread: " + to_string(subTid)
-            + " on core" + to_string(core) << endl;
+    cout << "On " + to_string(sched_getcpu()) << endl;
 
     pthread_barrier_t *local_barr = my_arg->node_barr;
     LocalFrontier *output = my_arg->localFrontier;
@@ -626,8 +625,6 @@ void PageRank(graph<vertex> &GA, int maxIter) {
         arg->rangeLow = prev;
         arg->rangeHi = prev + sizeArr[i];
         prev = prev + sizeArr[i];
-
-        cout << "Create thread on Node" + to_string(i) << endl;
 
         pthread_create(&tids[i], NULL, PageRankThread<vertex>, (void *) arg);
     }

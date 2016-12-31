@@ -32,7 +32,8 @@ endif
 COMMON= ligra.h polymer.h polymer-wgh.h graph.h utils.h IO.h parallel.h gettime.h quickSort.h
 
 ALL= DegreeCount ConvertToBinary #PartitionGraphToEdgeList
-MYAPPS= numa-BP numa-PageRank numa-PageRank-bin numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-BFS-async-pipe numa-SPMV numa-BellmanFord ConvertToJSON ConvertTmp
+#MYAPPS= numa-BP numa-PageRank numa-PageRank-bin numa-PageRank-pull numa-PageRank-write numa-PageRankDelta numa-Components numa-BFS numa-BFS-async-pipe numa-SPMV numa-BellmanFord ConvertToJSON ConvertTmp
+MYAPPS = numa-PageRank
 MYHEADER= ligra-rewrite.h ligra-numa.h
 LIBS_I_NEED= -pthread -lnuma
 
@@ -42,7 +43,7 @@ debug: PCFLAGS = -fcilkplus -lcilkrts -O0 -g -DCILK $(INTT) $(INTE)
 debug: all
 
 % : %.C $(COMMON)
-	$(PCC) $(PCFLAGS) -o $@ $< $(LIBS_I_NEED)
+	$(PCC) $(PCFLAGS) -o $@ $< $(LIBS_I_NEED) -std=c++14
 
 .PHONY : clean
 

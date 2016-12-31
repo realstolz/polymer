@@ -84,7 +84,7 @@ struct timer {
   }
 
   void reportStop(double weight, std::string str) {
-    std::cout << str << " :" << weight << ": ";
+    std::cerr << str << " :" << weight << ": ";
     reportTime(stop(weight));
   }
 
@@ -96,12 +96,12 @@ struct timer {
   }
 
   void reportTotal(std::string str) {
-    std::cout << str << " : "; 
+    std::cerr << str << " : ";
     reportTotal();}
 
   void reportNext() {reportTime(next());}
 
-  void reportNext(std::string str) {std::cout << str << " : "; reportNext();}
+  void reportNext(std::string str) {std::cerr << str << " : "; reportNext();}
 };
 
 static timer _tm;

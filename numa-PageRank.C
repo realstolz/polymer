@@ -387,14 +387,14 @@ void *PageRankThread(void *arg) {
     int rangeHi = my_arg->rangeHi;
 
     if (tid == 0) {
-        printf("average is: %lf\n", GA.m / (float) (my_arg->numOfNode));
+        //printf("average is: %lf\n", GA.m / (float) (my_arg->numOfNode));
     }
     pthread_barrier_wait(&barr);
     intT degreeSum = 0;
     for (intT i = rangeLow; i < rangeHi; i++) {
         degreeSum += GA.V[i].getInDegree();
     }
-    printf("%d : degree count: %d\n", tid, degreeSum);
+    cerr << to_string(tid) + " : degree count: " + to_string(degreeSum) + "\n";
 
     //graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
     graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
@@ -415,7 +415,7 @@ void *PageRankThread(void *arg) {
 
     while (shouldStart == 0);
     pthread_barrier_wait(&timerBarr);
-    printf("over filtering\n");
+    cerr << "over filtering\n";
     /*
     if (0 != __cilkrts_set_param("nworkers","1")) {
 	printf("set failed: %d\n", tid);

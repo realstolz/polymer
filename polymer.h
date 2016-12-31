@@ -158,7 +158,7 @@ void partitionByDegree(graph<vertex> GA, int numOfShards, int *sizeArr, int size
     }
 
     int averageDegree = totalDegree / numOfShards;
-    printf("average is %d\n", averageDegree);
+    cerr << "average is " + to_string(averageDegree) + "\n";
     int counter = 0;
     int tmpSizeCounter = 0;
     for (intT i = 0; i < n; i += PAGESIZE / sizeOfOneEle) {
@@ -402,7 +402,7 @@ graph<vertex> graphFilter(graph<vertex> &GA, int rangeLow, int rangeHi, bool use
                 printf("oops: %d %d\n", counter, newVertexSet[i].getFakeDegree());
             }
             if (i == 0) {
-                printf("fake deg: %d\n", newVertexSet[i].getFakeDegree());
+                cerr << "fake deg: " + to_string(newVertexSet[i].getFakeDegree()) + "\n";
             }
             if (useOutEdge)
                 newVertexSet[i].setOutNeighbors(localEdges);
@@ -464,7 +464,7 @@ graph<vertex> graphFilter2Direction(graph<vertex> &GA, int rangeLow, int rangeHi
 
     intE *edges = (intE *) numa_alloc_local(sizeof(intE) * totalSize);
     intE *inEdges = (intE *) numa_alloc_local(sizeof(intE) * totalInSize);
-    printf("totalInSize is %d\n", totalInSize);
+    cerr << "totalInSize is " + to_string(totalInSize) + "\n";
 
     {
         parallel_for (intT i = 0; i < GA.n; i++) {

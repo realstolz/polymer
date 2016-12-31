@@ -497,7 +497,7 @@ graph<vertex> graphFilter2Direction(graph<vertex> &GA, int rangeLow, int rangeHi
             }
 
             if (i == 0) {
-                printf("fake deg: %d\n", newVertexSet[i].getFakeDegree());
+                cerr << "fake deg: " + to_string(newVertexSet[i].getFakeDegree()) + "\n";
             }
 
             newVertexSet[i].setOutNeighbors(localEdges);

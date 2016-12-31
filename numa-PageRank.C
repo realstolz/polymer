@@ -262,7 +262,7 @@ void *PageRankSubWorker(void *arg) {
     CPU_SET(core, &cpuset);
     sched_setaffinity(syscall(SYS_gettid), sizeof(cpu_set_t), &cpuset);
 
-    cout << "On " + to_string(sched_getcpu()) << endl;
+    cerr << "On " + to_string(sched_getcpu()) + "\n";
 
     pthread_barrier_t *local_barr = my_arg->node_barr;
     LocalFrontier *output = my_arg->localFrontier;
@@ -605,7 +605,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
         for (intT j = accum; j < accum + sizeArr[i]; j++) {
             degreeSum += GA.V[j].getInDegree();
         }
-        printf("%d: degree sum: %d\n", i, degreeSum);
+        cerr << to_string(i) + ": degree sum: " + to_string(degreeSum) + "\n";
         accum += sizeArr[i];
     }
     //return;
@@ -613,7 +613,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     p_curr_global = (double *) mapDataArray(numOfNode, sizeArr, sizeof(double));
     p_next_global = (double *) mapDataArray(numOfNode, sizeArr, sizeof(double));
 
-    printf("start create %d threads\n", numOfNode);
+    cerr << "start create " + to_string(numOfNode) << "threads\n";
     pthread_t tids[numOfNode];
     int prev = 0;
     for (int i = 0; i < numOfNode; i++) {
@@ -633,7 +633,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     pthread_barrier_wait(&timerBarr);
     //nextTime("Graph Partition");
     nextTime("partition over");
-    printf("all created\n");
+    cerr << "all created\n";
     for (int i = 0; i < numOfNode; i++) {
         pthread_join(tids[i], NULL);
     }

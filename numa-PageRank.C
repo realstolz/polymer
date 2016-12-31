@@ -641,7 +641,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
 
     if (needResult) {
         for (intT i = 0; i < GA.n; i++) {
-            cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
+            cerr << i << "\t" << std::scientific << std::setprecision(9) << p_ans[hasher.hashFunc(i)] << "\n";
             //cout << i << "\t" << std::scientific << std::setprecision(9) << p_ans[i] << "\n";
         }
     }

@@ -50,9 +50,9 @@ struct addF { E operator() (const E& a, const E& b) const {return a+b;}};
 template <class T>
 struct _seq {
   T* A;
-  long n;
+  long long n;
   _seq() {A = NULL; n=0;}
-_seq(T* _A, long _n) : A(_A), n(_n) {}
+_seq(T* _A, long long _n) : A(_A), n(_n) {}
   void del() {free(A);}
 };
 

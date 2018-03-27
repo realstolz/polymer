@@ -42,7 +42,7 @@ double *p_curr_global = NULL;
 double *p_next_global = NULL;
 
 double *p_ans = NULL;
-int vPerNode = 0;
+intT vPerNode = 0;
 int numOfNode = 0;
 
 bool needResult = false;
@@ -57,19 +57,19 @@ template <class vertex>
 struct SPMV_F {
     double* p_curr, *p_next;
     vertex* V;
-    int rangeLow;
-    int rangeHi;
-    SPMV_F(double* _p_curr, double* _p_next, vertex* _V, int _rangeLow, int _rangeHi) : 
+    intT rangeLow;
+    intT rangeHi;
+    SPMV_F(double* _p_curr, double* _p_next, vertex* _V, intT _rangeLow, intT _rangeHi) : 
 	p_curr(_p_curr), p_next(_p_next), V(_V), rangeLow(_rangeLow), rangeHi(_rangeHi) {}
 
     inline void *nextPrefetchAddr(intT index) {
 	return &p_curr[index];
     }
-    inline bool update(intT s, intT d, int edgeLen){ //update function applies PageRank equation
+    inline bool update(intT s, intT d, intE edgeLen){ //update function applies PageRank equation
 	p_next[d] += p_curr[s] * edgeLen;
 	return 1;
     }
-    inline bool updateAtomic (intT s, intT d, int edgeLen) { //atomic Update
+    inline bool updateAtomic (intT s, intT d, intE edgeLen) { //atomic Update
 	writeAdd(&p_next[d], p_curr[s] * edgeLen);
 	/*
 	if (d == 110101) {
@@ -83,7 +83,7 @@ struct SPMV_F {
 	*(double *)dataPtr = 0.0;
     }
     
-    inline bool reduceFunc(void *dataPtr, intT s, intT edgeW) {
+    inline bool reduceFunc(void *dataPtr, intT s, intE edgeW) {
 	*(double *)dataPtr += p_curr[s] * edgeW;
 	return true;
     }
@@ -112,8 +112,8 @@ struct SPMV_worker_arg {
     int maxIter;
     int tid;
     int numOfNode;
-    int rangeLow;
-    int rangeHi;
+    intT rangeLow;
+    intT rangeHi;
 };
 
 struct SPMV_subworker_arg {
@@ -121,10 +121,10 @@ struct SPMV_subworker_arg {
     int maxIter;
     int tid;
     int subTid;
-    int startPos;
-    int endPos;
-    int rangeLow;
-    int rangeHi;
+    intT startPos;
+    intT endPos;
+    intT rangeLow;
+    intT rangeHi;
     double **p_curr_ptr;
     double **p_next_ptr;
     pthread_barrier_t *node_barr;
@@ -146,11 +146,11 @@ void *SPMVSubWorker(void *arg) {
     double *p_next = *(my_arg->p_next_ptr);
     
     int currIter = 0;
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
-    int start = my_arg->startPos;
-    int end = my_arg->endPos;
+    intT start = my_arg->startPos;
+    intT end = my_arg->endPos;
 
     Subworker_Partitioner subworker(CORES_PER_NODE);
     subworker.tid = tid;
@@ -170,7 +170,7 @@ void *SPMVSubWorker(void *arg) {
             break;
         currIter++;
 	if (subTid == 0) {
-	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    {parallel_for(long long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	
 	pthread_barrier_wait(&global_barr);
@@ -212,8 +212,8 @@ void *SPMVThread(void *arg) {
     struct bitmask *nodemask = numa_parse_nodestring(nodeString);
     numa_bind(nodemask);
 
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
     printf("%d before partition\n", tid);
     //wghGraph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
     wghGraph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
@@ -225,7 +225,7 @@ void *SPMVThread(void *arg) {
 
     printf("%d after partition\n", tid);
 
-    int sizeOfShards[CORES_PER_NODE];
+    intT sizeOfShards[CORES_PER_NODE];
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, true);
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
@@ -243,7 +243,7 @@ void *SPMVThread(void *arg) {
     const intT n = GA.n;
     int numOfT = my_arg->numOfNode;
 
-    int blockSize = rangeHi - rangeLow;
+    intT blockSize = rangeHi - rangeLow;
 
     //printf("blockSizeof %d: %d low: %d high: %d\n", tid, blockSize, rangeLow, rangeHi);
 
@@ -294,7 +294,7 @@ void *SPMVThread(void *arg) {
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
-    int startPos = 0;
+    intT startPos = 0;
 
     pthread_t subTids[CORES_PER_NODE];    
 
@@ -329,25 +329,25 @@ void *SPMVThread(void *arg) {
 
 struct SPMV_Hash_F {
     int shardNum;
-    int vertPerShard;
-    int n;
-    SPMV_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    intT vertPerShard;
+    intT n;
+    SPMV_Hash_F(intT _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
     
-    inline int hashFunc(int index) {
+    inline intT hashFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index % shardNum;
-	int idxInShard = index / shardNum;
+	intT idxOfShard = index % shardNum;
+	intT idxInShard = index / shardNum;
 	return (idxOfShard * vertPerShard + idxInShard);
     }
 
-    inline int hashBackFunc(int index) {
+    inline intT hashBackFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index / vertPerShard;
-	int idxInShard = index % vertPerShard;
+	intT idxOfShard = index / vertPerShard;
+	intT idxInShard = index % vertPerShard;
 	return (idxOfShard + idxInShard * shardNum);
     }
 };
@@ -361,7 +361,7 @@ void SPMV_main(wghGraph<vertex> &GA, int maxIter) {
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
     pthread_mutex_init(&mut, NULL);
-    int sizeArr[numOfNode];
+    intT sizeArr[numOfNode];
     SPMV_Hash_F hasher(GA.n, numOfNode);
     graphHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double));
@@ -378,7 +378,7 @@ void SPMV_main(wghGraph<vertex> &GA, int maxIter) {
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
-    int prev = 0;
+    intT prev = 0;
     for (int i = 0; i < numOfNode; i++) {
 	SPMV_worker_arg *arg = (SPMV_worker_arg *)malloc(sizeof(SPMV_worker_arg));
 	arg->GA = (void *)(&GA);

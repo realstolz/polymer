@@ -43,7 +43,7 @@ volatile int global_toggle = 0;
 intT *IDs_global = NULL;
 intT *PrevIDs_global = NULL;
 
-int vPerNode = 0;
+intT vPerNode = 0;
 int numOfNode = 0;
 
 int CORES_PER_NODE = 0;
@@ -134,8 +134,8 @@ void edgeMapCustom(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT
     if (subworker.isMaster())
 	printf("%d\n", m);
     */
-    int start = subworker.dense_start;
-    int end = subworker.dense_end;
+    intT start = subworker.dense_start;
+    intT end = subworker.dense_end;
 
     if (m >= threshold) {       
 	//Dense part	
@@ -188,11 +188,11 @@ void *ComponentsSubWorker(void *args) {
     LocalFrontier *output = my_arg->localFrontier;
     
     int currIter = 0;
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
-    int start = my_arg->startPos;
-    int end = my_arg->endPos;
+    intT start = my_arg->startPos;
+    intT end = my_arg->endPos;
 
     intT numVisited = 0;
 
@@ -302,8 +302,8 @@ void *ComponentsWorker(void *args) {
     struct bitmask *nodemask = numa_parse_nodestring(nodeString);
     numa_bind(nodemask);
 
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
     graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
     
@@ -311,7 +311,7 @@ void *ComponentsWorker(void *args) {
     
     const intT n = GA.n;
     int numOfT = my_arg->numOfNode;
-    int blockSize = rangeHi - rangeLow;
+    intT blockSize = rangeHi - rangeLow;
     
     bool *frontier = (bool *)numa_alloc_local(sizeof(bool) * blockSize);
     intT outEdgesCount = 0;
@@ -340,7 +340,7 @@ void *ComponentsWorker(void *args) {
     
     LocalFrontier *output = new LocalFrontier(next, rangeLow, rangeHi);
     
-    int sizeOfShards[CORES_PER_NODE];
+    intT sizeOfShards[CORES_PER_NODE];
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(intT), true, true);
 
     pthread_barrier_t masterBarr;
@@ -349,7 +349,7 @@ void *ComponentsWorker(void *args) {
     pthread_barrier_t nodeBarr;
     pthread_barrier_init(&nodeBarr, NULL, CORES_PER_NODE);
 
-    int startPos = 0;
+    intT startPos = 0;
     pthread_t subTids[CORES_PER_NODE];
     
     volatile int local_counter = 0;
@@ -409,7 +409,7 @@ void Components(graph<vertex> &GA) {
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
-    int sizeArr[numOfNode];
+    intT sizeArr[numOfNode];
     Default_Hash_F hasher(GA.n, numOfNode);
     graphAllEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
@@ -426,7 +426,7 @@ void Components(graph<vertex> &GA) {
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
-    int prev = 0;
+    intT prev = 0;
     for (int i = 0; i < numOfNode; i++) {
 	Default_worker_arg *arg = (Default_worker_arg *)malloc(sizeof(Default_worker_arg));
 	arg->GA = (void *)(&GA);
@@ -450,7 +450,7 @@ void Components(graph<vertex> &GA) {
 
     if (needResult) {
 	for (intT i = 0; i < GA.n; i++) {
-	    printf("Result of %d : %d\n", i, IDs_global[hasher.hashFunc(i)]);
+	    printf("Result of %" PRIintT " : %" PRIintT "\n", i, IDs_global[hasher.hashFunc(i)]);
 	}
     }
 }

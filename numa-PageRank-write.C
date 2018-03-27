@@ -42,7 +42,7 @@ double *p_curr_global = NULL;
 double *p_next_global = NULL;
 
 double *p_ans = NULL;
-int vPerNode = 0;
+intT vPerNode = 0;
 int numOfNode = 0;
 
 bool needResult = false;
@@ -58,9 +58,9 @@ template <class vertex>
 struct PR_F {
     double* p_curr, *p_next;
     vertex* V;
-    int rangeLow;
-    int rangeHi;
-    PR_F(double* _p_curr, double* _p_next, vertex* _V, int _rangeLow, int _rangeHi) : 
+    intT rangeLow;
+    intT rangeHi;
+    PR_F(double* _p_curr, double* _p_next, vertex* _V, intT _rangeLow, intT _rangeHi) : 
 	p_curr(_p_curr), p_next(_p_next), V(_V), rangeLow(_rangeLow), rangeHi(_rangeHi) {}
 
     inline void *nextPrefetchAddr(intT index) {
@@ -113,8 +113,8 @@ struct PR_worker_arg {
     int maxIter;
     int tid;
     int numOfNode;
-    int rangeLow;
-    int rangeHi;
+    intT rangeLow;
+    intT rangeHi;
 };
 
 struct PR_subworker_arg {
@@ -122,10 +122,10 @@ struct PR_subworker_arg {
     int maxIter;
     int tid;
     int subTid;
-    int startPos;
-    int endPos;
-    int rangeLow;
-    int rangeHi;
+    intT startPos;
+    intT endPos;
+    intT rangeLow;
+    intT rangeHi;
     double **p_curr_ptr;
     double **p_next_ptr;
     double damping;
@@ -149,11 +149,11 @@ void *PageRankSubWorker(void *arg) {
     
     double damping = my_arg->damping;
     int currIter = 0;
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
-    int start = my_arg->startPos;
-    int end = my_arg->endPos;
+    intT start = my_arg->startPos;
+    intT end = my_arg->endPos;
 
     Subworker_Partitioner subworker(CORES_PER_NODE);
     subworker.tid = tid;
@@ -175,7 +175,7 @@ void *PageRankSubWorker(void *arg) {
 	if (subTid == 0)
 	    Frontier->calculateNumOfNonZero(tid);
 	if (subTid == 0) {
-	    {parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    {parallel_for(long long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	
 	pthread_barrier_wait(&global_barr);
@@ -231,12 +231,12 @@ void *PageRankThread(void *arg) {
     struct bitmask *nodemask = numa_parse_nodestring(nodeString);
     numa_bind(nodemask);
 
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
     graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi, false);
 
-    int sizeOfShards[CORES_PER_NODE];
+    intT sizeOfShards[CORES_PER_NODE];
 
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), false, true);
     
@@ -258,7 +258,7 @@ void *PageRankThread(void *arg) {
     const double epsilon = 0.0000001;
     int numOfT = my_arg->numOfNode;
 
-    int blockSize = rangeHi - rangeLow;
+    intT blockSize = rangeHi - rangeLow;
 
     //printf("blockSizeof %d: %d low: %d high: %d\n", tid, blockSize, rangeLow, rangeHi);
 
@@ -311,7 +311,7 @@ void *PageRankThread(void *arg) {
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
-    int startPos = 0;
+    intT startPos = 0;
 
     pthread_t subTids[CORES_PER_NODE];    
 
@@ -377,25 +377,25 @@ void *PageRankThread(void *arg) {
 
 struct PR_Hash_F {
     int shardNum;
-    int vertPerShard;
-    int n;
-    PR_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    intT vertPerShard;
+    intT n;
+    PR_Hash_F(intT _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
     
-    inline int hashFunc(int index) {
+    inline intT hashFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index % shardNum;
-	int idxInShard = index / shardNum;
+	intT idxOfShard = index % shardNum;
+	intT idxInShard = index / shardNum;
 	return (idxOfShard * vertPerShard + idxInShard);
     }
 
-    inline int hashBackFunc(int index) {
+    inline intT hashBackFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index / vertPerShard;
-	int idxInShard = index % vertPerShard;
+	intT idxOfShard = index / vertPerShard;
+	intT idxInShard = index % vertPerShard;
 	return (idxOfShard + idxInShard * shardNum);
     }
 };
@@ -409,7 +409,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
     pthread_mutex_init(&mut, NULL);
-    int sizeArr[numOfNode];
+    intT sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
     graphInEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(double), true);
@@ -419,7 +419,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
-    int prev = 0;
+    intT prev = 0;
     for (int i = 0; i < numOfNode; i++) {
 	PR_worker_arg *arg = (PR_worker_arg *)malloc(sizeof(PR_worker_arg));
 	arg->GA = (void *)(&GA);

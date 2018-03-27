@@ -34,7 +34,7 @@ void convertToBin(graph<vertex> GA, int numOfShards) {
 	
 	void *buf = (void *)malloc(totalSize);
 
-	printf("Total size is: %ld %p\n", totalSize, buf);
+	printf("Total size is: %lld %p\n", totalSize, buf);
 	
 	char *ptr = (char *)buf;
 
@@ -47,7 +47,7 @@ void convertToBin(graph<vertex> GA, int numOfShards) {
 	*(long long *)ptr = GA.m;
 	ptr += sizeof(long long);
 
-	printf("write n & m: %d %d\n", n, GA.m);
+	printf("write n & m: %" PRIintT " %" PRIintT "\n", n, GA.m);
 	
 	for (intT i = 0; i < n; i++) {
 	    *(intT *)ptr = -1;
@@ -75,7 +75,7 @@ void convertToBin(graph<vertex> GA, int numOfShards) {
 
 	long long sizeCheck = (long long)ptr - (long long)buf;
 
-	printf("size check: %ld %ld\n", sizeCheck, totalSize);
+	printf("size check: %lld %lld\n", sizeCheck, totalSize);
 
 	int fd = open(fileName, O_RDWR | O_CREAT, S_IWRITE | S_IREAD);
 	long long written = 0;
@@ -85,7 +85,7 @@ void convertToBin(graph<vertex> GA, int numOfShards) {
 		printf("oops\n");
 	    }	    
 	    written += sizeWritten;
-	    printf("wrote: %ld, accum: %ld\n", sizeWritten, written);
+	    printf("wrote: %lld, accum: %lld\n", sizeWritten, written);
 	}
     }
 }

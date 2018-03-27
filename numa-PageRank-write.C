@@ -461,12 +461,12 @@ int parallel_main(int argc, char* argv[]) {
     numa_set_interleave_mask(numa_all_nodes_ptr);
     if(symmetric) {
 	graph<symmetricVertex> G = 
-	    readGraph<symmetricVertex>(iFile,symmetric,binary);
+	    readGraphSkipRing<symmetricVertex>(iFile,symmetric,binary);
 	PageRank(G, maxIter);
 	G.del(); 
     } else {
 	graph<asymmetricVertex> G = 
-	    readGraph<asymmetricVertex>(iFile,symmetric,binary);
+	    readGraphSkipRing<asymmetricVertex>(iFile,symmetric,binary);
 	PageRank(G, maxIter);
 	G.del();
     }

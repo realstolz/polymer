@@ -190,6 +190,131 @@ graph<vertex> readGraphFromFile(char* fname, bool isSymmetric) {
 }
 
 template <class vertex>
+graph<vertex> readGraphFromFileSkipRing(char* fname, bool isSymmetric) {
+  _seq<char> S = readStringFromFile(fname);
+  words W = stringToWords(S.A, S.n);
+  if (W.Strings[0] != (string) "AdjacencyGraph") {
+    cout << "Bad input file" << endl;
+    abort();
+  }
+
+  long len = W.m -1;
+  long n = atol(W.Strings[1]);
+  long m = atol(W.Strings[2]);
+  if (len != n + m + 2) {
+    cout << "Bad input file" << endl;
+    abort();
+  }
+
+  intT* offsets = newA(intT,n);
+  intE* edges = newA(intE,m);
+
+  {parallel_for(long i=0; i < n; i++) offsets[i] = atol(W.Strings[i + 3]);}
+  {parallel_for(long i=0; i<m; i++) edges[i] = atol(W.Strings[i+n+3]); }
+  //W.del(); // to deal with performance bug in malloc
+
+  vertex* v = newA(vertex,n);
+
+  {parallel_for (uintT i=0; i < n; i++) {
+    uintT o = offsets[i];
+    uintT l = ((i == n-1) ? m : offsets[i+1])-offsets[i];
+    v[i].setOutDegree(l);
+    v[i].setOutNeighbors(edges+o);
+    }}
+
+  // skip self ring
+  intT *offsetsSkipedRing = newA(intT, n);
+  size_t edgeCnt = 0;
+
+  for (size_t i=0; i<n; i++) {
+	  intT outDegree = v[i].getOutDegree();
+	  intE *outEdgePtr = v[i].getOutNeighborPtr();
+	  offsetsSkipedRing[i] = edgeCnt;
+	  size_t tmpCnt = 0;
+
+	  for (size_t j=0; j<outDegree; j++) {
+		  if (outEdgePtr[j] != i)
+			  tmpCnt += 1;
+	  }
+	  edgeCnt += tmpCnt;
+  }
+
+  intE *edgesSkipedRing = newA(intE, edgeCnt);
+  intE *ptr = edgesSkipedRing;
+
+  {parallel_for(size_t i=0; i < n; i++) {
+    intT outDegree = v[i].getOutDegree();
+    intE *outEdgePtr = v[i].getOutNeighborPtr();
+
+    for (size_t j=0; j<outDegree; j++) {
+      if (outEdgePtr[j] != i) {
+	      *ptr = outEdgePtr[j];
+	      ptr += 1;
+      }
+    }
+  }}
+
+  free(offsets);
+  free(edges);
+  offsets = offsetsSkipedRing;
+  edges = edgesSkipedRing;
+  m = edgeCnt;
+
+  {parallel_for (uintT i=0; i < n; i++) {
+    uintT o = offsets[i];
+    uintT l = ((i == n-1) ? m : offsets[i+1])-offsets[i];
+    v[i].setOutDegree(l);
+    v[i].setOutNeighbors(edges+o);
+  }}
+
+  if(!isSymmetric) {
+    intT* tOffsets = newA(intT,n);
+    {parallel_for(intT i=0;i<n;i++) tOffsets[i] = INT_T_MAX;}
+    intE* inEdges = newA(intE,m);
+    intPair* temp = newA(intPair,m);
+    {parallel_for(intT i=0;i<n;i++){
+      uintT o = offsets[i];
+      for(intT j=0;j<v[i].getOutDegree();j++){
+	temp[o+j] = make_pair(v[i].getOutNeighbor(j),i);
+      }
+      }}
+    free(offsets);
+
+    quickSort(temp,m,pairFirstCmp<intE>());
+
+    tOffsets[0] = 0; inEdges[0] = temp[0].second;
+    {parallel_for(intT i=1;i<m;i++) {
+      inEdges[i] = temp[i].second;
+      if(temp[i].first != temp[i-1].first) {
+	tOffsets[temp[i].first] = i;
+      }
+      }}
+    free(temp);
+
+    uintT currOffset = m;
+    for(intT i=n-1;i>=0;i--) {
+      if(tOffsets[i] == INT_T_MAX) tOffsets[i] = currOffset;
+      else currOffset = tOffsets[i];
+    }
+
+    {parallel_for(uintT i=0;i<n;i++){
+      uintT o = tOffsets[i];
+      uintT l = ((i == n-1) ? m : tOffsets[i+1])-tOffsets[i];
+      v[i].setInDegree(l);
+      v[i].setInNeighbors(inEdges+o);
+      }}
+
+    free(tOffsets);
+    return graph<vertex>(v,(intT)n,m,edges,inEdges);
+  }
+
+  else {
+    free(offsets);
+    return graph<vertex>(v,(intT)n,m,edges);
+  }
+}
+
+template <class vertex>
 wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
   _seq<char> S = readStringFromFile(fname);
   words W = stringToWords(S.A, S.n);
@@ -277,6 +402,145 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
 }
 
 template <class vertex>
+graph<vertex> readGraphFromBinarySkipRing(char* iFile, bool isSymmetric) {
+  char* config = (char*) ".config";
+  char* adj = (char*) ".adj";
+  char* idx = (char*) ".idx";
+  char configFile[strlen(iFile)+7];
+  char adjFile[strlen(iFile)+4];
+  char idxFile[strlen(iFile)+4];
+  strcpy(configFile,iFile);
+  strcpy(adjFile,iFile);
+  strcpy(idxFile,iFile);
+  strcat(configFile,config);
+  strcat(adjFile,adj);
+  strcat(idxFile,idx);
+
+  ifstream in(configFile, ifstream::in);
+  intT n;
+  in >> n;
+  in.close();
+
+  ifstream in2(adjFile,ifstream::in | ios::binary); //stored as uints
+  in2.seekg(0, ios::end);
+  long size = in2.tellg();
+  in2.seekg(0);
+  uintT m = size/sizeof(uint);
+  char* s = (char *) malloc(size);
+  in2.read(s,size);
+  in2.close();
+
+  uintE* edges = (uintE*) s;
+  ifstream in3(idxFile,ifstream::in | ios::binary); //stored as longs
+  in3.seekg(0, ios::end);
+  size = in3.tellg();
+  in3.seekg(0);
+  if(n != size/sizeof(intT)) { cout << "File size wrong\n"; abort(); }
+
+  char* t = (char *) malloc(size);
+  in3.read(t,size);
+  in3.close();
+  intT* offsets = (intT*) t;
+
+  vertex* v = newA(vertex,n);
+
+  {parallel_for(long i=0;i<n;i++) {
+    uintT o = offsets[i];
+    uintT l = ((i==n-1) ? m : offsets[i+1])-offsets[i];
+      v[i].setOutDegree(l);
+      v[i].setOutNeighbors((intE*)edges+o); }}
+
+  // skip self ring
+  intT *offsetsSkipedRing = newA(intT, n);
+  size_t edgeCnt = 0;
+
+  for (size_t i=0; i<n; i++) {
+	  intT outDegree = v[i].getOutDegree();
+	  intE *outEdgePtr = v[i].getOutNeighborPtr();
+	  offsetsSkipedRing[i] = edgeCnt;
+	  size_t tmpCnt = 0;
+
+	  for (size_t j=0; j<outDegree; j++) {
+		  if (outEdgePtr[j] != i)
+			  tmpCnt += 1;
+	  }
+	  edgeCnt += tmpCnt;
+  }
+
+  uintE *edgesSkipedRing = newA(uintE, edgeCnt);
+  intE *ptr = (intE *)edgesSkipedRing;
+
+  {parallel_for(size_t i=0; i < n; i++) {
+    intT outDegree = v[i].getOutDegree();
+    intE *outEdgePtr = v[i].getOutNeighborPtr();
+
+    for (size_t j=0; j<outDegree; j++) {
+      if (outEdgePtr[j] != i) {
+	      *ptr = outEdgePtr[j];
+	      ptr += 1;
+      }
+    }
+  }}
+
+  free(offsets);
+  free(edges);
+  offsets = offsetsSkipedRing;
+  edges = edgesSkipedRing;
+  m = edgeCnt;
+
+  {parallel_for (uintT i=0; i < n; i++) {
+    uintT o = offsets[i];
+    uintT l = ((i == n-1) ? m : offsets[i+1])-offsets[i];
+    v[i].setOutDegree(l);
+    v[i].setOutNeighbors((intE *)edges+o);
+  }}
+
+  cout << "n = "<<n<<" m = "<<m<<endl;
+
+  if(!isSymmetric) {
+    intT* tOffsets = newA(intT,n);
+    {parallel_for(intT i=0;i<n;i++) tOffsets[i] = INT_T_MAX;}
+    uintE* inEdges = newA(uintE,m);
+    intPair* temp = newA(intPair,m);
+    {parallel_for(intT i=0;i<n;i++){
+      uintT o = offsets[i];
+      for(intT j=0;j<v[i].getOutDegree();j++){
+	temp[o+j].first = v[i].getOutNeighbor(j);
+	temp[o+j].second = i;
+      }
+      }}
+
+    quickSort(temp,m,pairFirstCmp<intE>());
+
+    tOffsets[0] = 0; inEdges[0] = temp[0].second;
+    {parallel_for(intT i=1;i<m;i++) {
+      inEdges[i] = temp[i].second;
+      if(temp[i].first != temp[i-1].first) {
+	tOffsets[temp[i].first] = i;
+      }
+      }}
+    free(temp);
+
+    uintT currOffset = m;
+    for(intT i=n-1;i>=0;i--) {
+      if(tOffsets[i] == INT_T_MAX) tOffsets[i] = currOffset;
+      else currOffset = tOffsets[i];
+    }
+
+    {parallel_for(uintT i=0;i<n;i++){
+      uintT o = tOffsets[i];
+      uintT l = ((i == n-1) ? m : tOffsets[i+1])-tOffsets[i];
+      v[i].setInDegree(l);
+      v[i].setInNeighbors((intE*)inEdges+o);
+      }}
+    free(tOffsets);
+    return graph<vertex>(v,(intT)n,m,(intE*)edges, (intE*)inEdges);
+  }
+  free(offsets);
+  return graph<vertex>(v,n,m,(intE*)edges);
+}
+
+template <class vertex>
 graph<vertex> readGraphFromBinary(char* iFile, bool isSymmetric) {
   char* config = (char*) ".config";
   char* adj = (char*) ".adj";
@@ -310,7 +574,7 @@ graph<vertex> readGraphFromBinary(char* iFile, bool isSymmetric) {
   in3.seekg(0, ios::end);
   size = in3.tellg();
   in3.seekg(0);
-  if(n != size/sizeof(long)) { cout << "File size wrong\n"; abort(); }
+  if(n != size/sizeof(intT)) { cout << "File size wrong\n"; abort(); }
 
   char* t = (char *) malloc(size);
   in3.read(t,size);
@@ -470,6 +734,12 @@ wghGraph<vertex> readWghGraphFromBinary(char* iFile, bool isSymmetric) {
   }
   free(offsets);
   return wghGraph<vertex>(V,n,m,edgesAndWeights);
+}
+
+template <class vertex>
+graph<vertex> readGraphSkipRing(char* iFile, bool symmetric, bool binary) {
+  if(binary) return readGraphFromBinarySkipRing<vertex>(iFile,symmetric);
+  else return readGraphFromFileSkipRing<vertex>(iFile,symmetric);
 }
 
 template <class vertex>

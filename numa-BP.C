@@ -132,8 +132,8 @@ struct BP_Vertex_Reset {
     BP_Vertex_Reset(VertexData *_vertD) :
 	vertD(_vertD) {}
     inline bool operator () (intT i) {
-	for (int i = 0; i < NSTATES; i++) {
-	    vertD[i].product[i] = 1.0;
+	for (int j = 0; j < NSTATES; j++) {
+	    vertD[i].product[j] = 1.0;
 	}
 	return 1;
     }

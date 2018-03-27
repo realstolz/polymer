@@ -38,7 +38,7 @@ int CORES_PER_NODE = 6;
 
 volatile int shouldStart = 0;
 
-int vPerNode = 0;
+intT vPerNode = 0;
 int numOfNode = 0;
 
 bool needResult = false;
@@ -144,8 +144,8 @@ struct BP_worker_arg {
     int maxIter;
     int tid;
     int numOfNode;
-    int rangeLow;
-    int rangeHi;
+    intT rangeLow;
+    intT rangeHi;
     
     VertexInfo *vertI;
     VertexData *vertD_curr;
@@ -157,10 +157,10 @@ struct BP_subworker_arg {
     int maxIter;
     int tid;
     int subTid;
-    int startPos;
-    int endPos;
-    int rangeLow;
-    int rangeHi;
+    intT startPos;
+    intT endPos;
+    intT rangeLow;
+    intT rangeHi;
     pthread_barrier_t *node_barr;
     LocalFrontier *localFrontier;
     volatile int *barr_counter;
@@ -183,16 +183,16 @@ bool* edgeMapDenseBPNoRep(graph<vertex> GA, vertices *frontier, F f, LocalFronti
 
     int currNodeNum = 0;
     bool *currBitVector = frontier->getArr(currNodeNum);
-    int nextSwitchPoint = frontier->getSize(0);
-    int currOffset = 0;
-    int counter = 0;
+    intT nextSwitchPoint = frontier->getSize(0);
+    intT currOffset = 0;
+    intT counter = 0;
 
     intT m = 0;
     intT outEdgesCount = 0;
     bool *nextB = next->b;
     
-    int size = frontier->getSize(subworker.tid);
-    int subSize = size / CORES_PER_NODE;
+    intT size = frontier->getSize(subworker.tid);
+    intT subSize = size / CORES_PER_NODE;
     intT startPos = subSize * subworker.subTid;
     intT endPos = subSize * (subworker.subTid + 1);
     if (subworker.subTid == CORES_PER_NODE - 1) {
@@ -241,11 +241,11 @@ void *BeliefPropagationSubWorker(void *arg) {
     LocalFrontier *output = my_arg->localFrontier;
 
     int currIter = 0;
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
-    int start = my_arg->startPos;
-    int end = my_arg->endPos;
+    intT start = my_arg->startPos;
+    intT end = my_arg->endPos;
 
     VertexInfo *vertI = my_arg->vertI;
     VertexData *vertD_curr = my_arg->vertD_curr;
@@ -333,8 +333,8 @@ void *BeliefPropagationThread(void *arg) {
     struct bitmask *nodemask = numa_parse_nodestring(nodeString);
     numa_bind(nodemask);
 
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
     graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
 
@@ -369,7 +369,7 @@ void *BeliefPropagationThread(void *arg) {
     }
 
     numLocalEdge = localOffsets2[rangeHi - rangeLow - 1] + localDegrees[rangeHi - rangeLow - 1];
-    printf ("numLocalEdge of %d: %d\n", tid, numLocalEdge);
+    printf ("numLocalEdge of %d: %" PRIintT "\n", tid, numLocalEdge);
 
     EdgeWeight *edgeW = (EdgeWeight *)numa_alloc_local(sizeof(EdgeWeight) * numLocalEdge);
     
@@ -382,7 +382,7 @@ void *BeliefPropagationThread(void *arg) {
 	    vertex vert = GA.V[i];
 	    for (intT j = 0; j < d; j++) {
 		intT ngh = vert.getOutNeighbor(j);
-		int idx = -1;
+		intT idx = -1;
 		intT ngh_d = GA.V[ngh].getOutDegree();
 		vertex ngh_vert = GA.V[ngh];
 		for (intT k = 0; k < ngh_d; k++) {
@@ -399,7 +399,7 @@ void *BeliefPropagationThread(void *arg) {
 	}
     }
     */
-    int sizeOfShards[CORES_PER_NODE];
+    intT sizeOfShards[CORES_PER_NODE];
 
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(VertexData), true, true);
     
@@ -419,7 +419,7 @@ void *BeliefPropagationThread(void *arg) {
     const intT n = GA.n;
     int numOfT = my_arg->numOfNode;
 
-    int blockSize = rangeHi - rangeLow;
+    intT blockSize = rangeHi - rangeLow;
 
     //printf("blockSizeof %d: %d low: %d high: %d\n", tid, blockSize, rangeLow, rangeHi);
 
@@ -457,12 +457,12 @@ void *BeliefPropagationThread(void *arg) {
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
-    int startPos = 0;
+    intT startPos = 0;
 
     pthread_t subTids[CORES_PER_NODE];    
 
-    volatile int local_custom_counter;
-    volatile int local_toggle;
+    volatile int local_custom_counter = 0;
+    volatile int local_toggle = 0;
 
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	BP_subworker_arg *arg = (BP_subworker_arg *)malloc(sizeof(BP_subworker_arg));
@@ -509,25 +509,25 @@ void *BeliefPropagationThread(void *arg) {
 
 struct BP_Hash_F {
     int shardNum;
-    int vertPerShard;
-    int n;
-    BP_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    intT vertPerShard;
+    intT n;
+    BP_Hash_F(intT _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
     
-    inline int hashFunc(int index) {
+    inline intT hashFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index % shardNum;
-	int idxInShard = index / shardNum;
+	intT idxOfShard = index % shardNum;
+	intT idxInShard = index / shardNum;
 	return (idxOfShard * vertPerShard + idxInShard);
     }
 
-    inline int hashBackFunc(int index) {
+    inline intT hashBackFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index / vertPerShard;
-	int idxInShard = index % vertPerShard;
+	intT idxOfShard = index / vertPerShard;
+	intT idxInShard = index % vertPerShard;
 	return (idxOfShard + idxInShard * shardNum);
     }
 };
@@ -541,7 +541,7 @@ void BeliefPropagation(graph<vertex> &GA, int maxIter) {
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
     pthread_mutex_init(&mut, NULL);
-    int sizeArr[numOfNode];
+    intT sizeArr[numOfNode];
     BP_Hash_F hasher(GA.n, numOfNode);
     graphHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(VertexData));
@@ -560,7 +560,7 @@ void BeliefPropagation(graph<vertex> &GA, int maxIter) {
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
-    int prev = 0;
+    intT prev = 0;
     for (int i = 0; i < numOfNode; i++) {
 	BP_worker_arg *arg = (BP_worker_arg *)malloc(sizeof(BP_worker_arg));
 	arg->GA = (void *)(&GA);

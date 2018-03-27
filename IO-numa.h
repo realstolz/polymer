@@ -49,12 +49,12 @@ struct pairFirstCmp {
 // A structure that keeps a sequence of strings all allocated from
 // the same block of memory
 struct words {
-  long n; // total number of characters
+  long long n; // total number of characters
   char* Chars;  // array storing all strings
-  long m; // number of substrings
+  long long m; // number of substrings
   char** Strings; // pointers to strings (all should be null terminated)
   words() {}
-words(char* C, long nn, char** S, long mm)
+words(char* C, long long nn, char** S, long long mm)
 : Chars(C), n(nn), Strings(S), m(mm) {}
   void del() {free(Chars); free(Strings);}
 };
@@ -76,9 +76,9 @@ _seq<char> readStringFromFile(char *fileName) {
     std::cout << "Unable to open file: " << fileName << std::endl;
     abort();
   }
-  long end = file.tellg();
+  long long end = file.tellg();
   file.seekg (0, ios::beg);
-  long n = end - file.tellg();
+  long long n = end - file.tellg();
   char* bytes = newA(char,n+1);
   //printf("end is: %lu, n is: %lu, bytes is: %p\n", end, n, bytes);
   file.read (bytes,n);
@@ -87,23 +87,23 @@ _seq<char> readStringFromFile(char *fileName) {
 }
 
 // parallel code for converting a string to words
-words stringToWords(char *Str, long n) {
-  {parallel_for (long i=0; i < n; i++) 
+words stringToWords(char *Str, long long n) {
+  {parallel_for (long long i=0; i < n; i++) 
       if (isSpace(Str[i])) Str[i] = 0; }
 
   // mark start of words
   bool *FL = newA(bool,n);
   FL[0] = Str[0];
-  {parallel_for (long i=1; i < n; i++) FL[i] = Str[i] && !Str[i-1];}
+  {parallel_for (long long i=1; i < n; i++) FL[i] = Str[i] && !Str[i-1];}
     
   // offset for each start of word
-  _seq<long> Off = sequence::packIndex<long>(FL, n);
-  long m = Off.n;
-  long *offsets = Off.A;
+  _seq<long long> Off = sequence::packIndex<long long>(FL, n);
+  long long m = Off.n;
+  long long *offsets = Off.A;
 
   // pointer to each start of word
   char **SA = newA(char*, m);
-  {parallel_for (long j=0; j < m; j++) SA[j] = Str+offsets[j];}
+  {parallel_for (long long j=0; j < m; j++) SA[j] = Str+offsets[j];}
 
   free(offsets); free(FL);
   return words(Str,n,SA,m);
@@ -118,9 +118,9 @@ graph<vertex> readGraphFromFile(char* fname, bool isSymmetric) {
     abort();
   }
 
-  long len = W.m -1;
-  long n = atol(W.Strings[1]);
-  long m = atol(W.Strings[2]);
+  long long len = W.m -1;
+  long long n = atol(W.Strings[1]);
+  long long m = atol(W.Strings[2]);
   if (len != n + m + 2) {
     cout << "Bad input file" << endl;
     abort();
@@ -129,8 +129,8 @@ graph<vertex> readGraphFromFile(char* fname, bool isSymmetric) {
   intT* offsets = newA(intT,n);
   intE* edges = newA(intE,m);
 
-  {parallel_for(long i=0; i < n; i++) offsets[i] = atol(W.Strings[i + 3]);}
-  {parallel_for(long i=0; i<m; i++) edges[i] = atol(W.Strings[i+n+3]); }
+  {parallel_for(long long i=0; i < n; i++) offsets[i] = atol(W.Strings[i + 3]);}
+  {parallel_for(long long i=0; i<m; i++) edges[i] = atol(W.Strings[i+n+3]); }
   //W.del(); // to deal with performance bug in malloc
     
   vertex* v = newA(vertex,n);
@@ -199,9 +199,9 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
     abort();
   }
 
-  long len = W.m -1;
-  long n = atol(W.Strings[1]);
-  long m = atol(W.Strings[2]);
+  long long len = W.m -1;
+  long long n = atol(W.Strings[1]);
+  long long m = atol(W.Strings[2]);
   if (len != n + 2*m + 2) {
     cout << "Bad input file" << endl;
     abort();
@@ -210,8 +210,8 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
   intT* offsets = newA(intT,n);
   intE* edgesAndWeights = newA(intE,2*m);
 
-  {parallel_for(long i=0; i < n; i++) offsets[i] = atol(W.Strings[i + 3]);}
-  {parallel_for(long i=0; i<m; i++) {
+  {parallel_for(long long i=0; i < n; i++) offsets[i] = atol(W.Strings[i + 3]);}
+  {parallel_for(long long i=0; i<m; i++) {
       edgesAndWeights[2*i] = atol(W.Strings[i+n+3]); 
       edgesAndWeights[2*i+1] = atol(W.Strings[i+n+m+3]);
     } }
@@ -243,7 +243,7 @@ wghGraph<vertex> readWghGraphFromFile(char* fname, bool isSymmetric) {
     tOffsets[0] = 0; 
     inEdgesAndWghs[0] = temp[0].second.first;
     inEdgesAndWghs[1] = temp[0].second.second;
-    {parallel_for(long i=1;i<m;i++) {
+    {parallel_for(long long i=1;i<m;i++) {
       inEdgesAndWghs[2*i] = temp[i].second.first; 
       inEdgesAndWghs[2*i+1] = temp[i].second.second;
       if(temp[i].first != temp[i-1].first) {
@@ -298,7 +298,7 @@ graph<vertex> readGraphFromBinary(char* iFile, bool isSymmetric) {
 
   ifstream in2(adjFile,ifstream::in | ios::binary); //stored as uints
   in2.seekg(0, ios::end);
-  long size = in2.tellg();
+  long long size = in2.tellg();
   in2.seekg(0);
   uintT m = size/sizeof(uint);
   char* s = (char *) malloc(size);
@@ -319,7 +319,7 @@ graph<vertex> readGraphFromBinary(char* iFile, bool isSymmetric) {
 
   vertex* v = newA(vertex,n);
   
-  {parallel_for(long i=0;i<n;i++) {
+  {parallel_for(long long i=0;i<n;i++) {
     uintT o = offsets[i];
     uintT l = ((i==n-1) ? m : offsets[i+1])-offsets[i];
       v[i].setOutDegree(l); 
@@ -392,7 +392,7 @@ wghGraph<vertex> readWghGraphFromBinary(char* iFile, bool isSymmetric) {
 
   ifstream in2(adjFile,ifstream::in | ios::binary); //stored as uints
   in2.seekg(0, ios::end);
-  long size = in2.tellg();
+  long long size = in2.tellg();
   in2.seekg(0);
   uintT m = size/sizeof(uint);
 
@@ -414,13 +414,13 @@ wghGraph<vertex> readWghGraphFromBinary(char* iFile, bool isSymmetric) {
 
   vertex *V = newA(vertex, n);
   intE* edgesAndWeights = newA(intE,2*m);
-  {parallel_for(long i=0;i<m;i++) {
+  {parallel_for(long long i=0;i<m;i++) {
     edgesAndWeights[2*i] = edges[i];
     edgesAndWeights[2*i+1] = 1; //give them unit weight
     }}
   free(edges);
 
-  {parallel_for(long i=0;i<n;i++) {
+  {parallel_for(long long i=0;i<n;i++) {
     uintT o = offsets[i];
     uintT l = ((i==n-1) ? m : offsets[i+1])-offsets[i];
     V[i].setOutDegree(l);
@@ -491,14 +491,14 @@ graph<vertex> loadGraphFromBin(char *fileName) {
     long long totalSize = 0;
     read(fd, (void *)&totalSize, sizeof(long long));
     void *buf = (void *)malloc(totalSize);
-    printf("totalSize is: %ld %p\n", totalSize, buf);
+    printf("totalSize is: %lld %p\n", totalSize, buf);
     lseek(fd, 0, SEEK_SET);
 
     long long readSize = 0;
     while (readSize < totalSize) {
 	long long readOnce = read(fd, (void *)((char *)buf + readSize), totalSize - readSize);
 	readSize += readOnce;
-	printf("read %ld, accum %ld\n", readOnce, readSize);
+	printf("read %lld, accum %lld\n", readOnce, readSize);
     }
 
     char *ptr = (char *)buf;
@@ -510,7 +510,7 @@ graph<vertex> loadGraphFromBin(char *fileName) {
     long long m = *(long long *)ptr;
     ptr += sizeof(long long);
 
-    printf("n & m: %d %d\n", n, m);
+    printf("n & m: %" PRIintT " %lld\n", n, m);
 
     vertex *vertices = newA(vertex, n);
     intE *edges = newA(intE, m);
@@ -520,7 +520,7 @@ graph<vertex> loadGraphFromBin(char *fileName) {
 
     for (intT i = 0; i < n; i++) {
 	if (*(intT *)ptr != -1) {
-	    printf("oops: %d\n", i);
+	    printf("oops: %" PRIintT "\n", i);
 	    abort();
 	}
 	ptr += sizeof(intT);

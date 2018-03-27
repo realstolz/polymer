@@ -47,7 +47,7 @@ double *p_curr_global = NULL;
 double *p_next_global = NULL;
 
 double *p_ans = NULL;
-int vPerNode = 0;
+intT vPerNode = 0;
 int numOfNode = 0;
 
 bool needResult = false;
@@ -65,9 +65,9 @@ template <class vertex>
 struct PR_F {
     double* p_curr, *p_next;
     vertex* V;
-    int rangeLow;
-    int rangeHi;
-    PR_F(double* _p_curr, double* _p_next, vertex* _V, int _rangeLow, int _rangeHi) : 
+    intT rangeLow;
+    intT rangeHi;
+    PR_F(double* _p_curr, double* _p_next, vertex* _V, intT _rangeLow, intT _rangeHi) : 
 	p_curr(_p_curr), p_next(_p_next), V(_V), rangeLow(_rangeLow), rangeHi(_rangeHi) {}
 
     inline void *nextPrefetchAddr(intT index) {
@@ -152,8 +152,8 @@ struct PR_worker_arg {
     int maxIter;
     int tid;
     int numOfNode;
-    int rangeLow;
-    int rangeHi;
+    intT rangeLow;
+    intT rangeHi;
 };
 
 struct PR_subworker_arg {
@@ -161,10 +161,10 @@ struct PR_subworker_arg {
     int maxIter;
     int tid;
     int subTid;
-    int startPos;
-    int endPos;
-    int rangeLow;
-    int rangeHi;
+    intT startPos;
+    intT endPos;
+    intT rangeLow;
+    intT rangeHi;
     double **p_curr_ptr;
     double **p_next_ptr;
     double damping;
@@ -175,22 +175,22 @@ struct PR_subworker_arg {
 };
 
 template <class F, class vertex>
-bool* edgeMapDenseForwardOTHER(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, int start = 0, int end = 0) {
+bool* edgeMapDenseForwardOTHER(graph<vertex> GA, vertices *frontier, F f, LocalFrontier *next, bool part = false, intT start = 0, intT end = 0) {
     intT numVertices = GA.n;
     vertex *G = GA.V;
 
     int currNodeNum = 0;
     bool *currBitVector = frontier->getArr(currNodeNum);
-    int nextSwitchPoint = frontier->getSize(0);
-    int currOffset = 0;
-    int counter = 0;
+    intT nextSwitchPoint = frontier->getSize(0);
+    intT currOffset = 0;
+    intT counter = 0;
 
     intT m = 0;
     intT outEdgesCount = 0;
     bool *nextB = next->b;
     
-    int startPos = 0;
-    int endPos = numVertices;
+    intT startPos = 0;
+    intT endPos = numVertices;
     if (part) {
 	startPos = start;
 	endPos = end;
@@ -200,7 +200,7 @@ bool* edgeMapDenseForwardOTHER(graph<vertex> GA, vertices *frontier, F f, LocalF
 	nextSwitchPoint = frontier->getOffset(currNodeNum+1);
 	currOffset = frontier->getOffset(currNodeNum);
     }
-    for (long i=startPos; i<endPos; i++){
+    for (long long i=startPos; i<endPos; i++){
 	if (i == nextSwitchPoint) {
 	    currOffset += frontier->getSize(currNodeNum);
 	    nextSwitchPoint += frontier->getSize(currNodeNum + 1);
@@ -245,11 +245,11 @@ void *PageRankSubWorker(void *arg) {
     
     double damping = my_arg->damping;
     int currIter = 0;
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
-    int start = my_arg->startPos;
-    int end = my_arg->endPos;
+    intT start = my_arg->startPos;
+    intT end = my_arg->endPos;
 
     Custom_barrier globalCustom(&global_counter, &global_toggle, Frontier->numOfNodes);
     Custom_barrier localCustom(my_arg->barr_counter, my_arg->toggle, CORES_PER_NODE);
@@ -277,7 +277,7 @@ void *PageRankSubWorker(void *arg) {
 	if (subTid == 0)
 	    Frontier->calculateNumOfNonZero(tid);
 	if (subTid == 0) {
-	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    //{parallel_for(long long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	
 	pthread_barrier_wait(&global_barr);
@@ -355,8 +355,8 @@ void *PageRankThread(void *arg) {
     struct bitmask *nodemask = numa_parse_nodestring(nodeString);
     numa_bind(nodemask);
 
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
     
     if (tid == 0) {
 	printf ("average is: %lf\n", GA.m / (float)(my_arg->numOfNode));
@@ -366,7 +366,7 @@ void *PageRankThread(void *arg) {
     for (intT i = rangeLow; i < rangeHi; i++) {
 	degreeSum += GA.V[i].getInDegree();
     }
-    printf("%d : degree count: %d\n", tid, degreeSum);
+    printf("%d : degree count: %" PRIintT "\n", tid, degreeSum);
     
     //graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
     graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
@@ -376,7 +376,7 @@ void *PageRankThread(void *arg) {
 	GA.del();
     pthread_barrier_wait(&barr);
 
-    int sizeOfShards[CORES_PER_NODE];    
+    intT sizeOfShards[CORES_PER_NODE];    
 
     subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(double), true, true);
     //intT localDegrees = (intT *)malloc(sizeof(intT) * localGraph.n);
@@ -399,7 +399,7 @@ void *PageRankThread(void *arg) {
     const double epsilon = 0.0000001;
     int numOfT = my_arg->numOfNode;
 
-    int blockSize = rangeHi - rangeLow;
+    intT blockSize = rangeHi - rangeLow;
 
     //printf("blockSizeof %d: %d low: %d high: %d\n", tid, blockSize, rangeLow, rangeHi);
 
@@ -450,7 +450,7 @@ void *PageRankThread(void *arg) {
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
 
-    int startPos = 0;
+    intT startPos = 0;
 
     pthread_t subTids[CORES_PER_NODE];    
 
@@ -522,25 +522,25 @@ void *PageRankThread(void *arg) {
 
 struct PR_Hash_F {
     int shardNum;
-    int vertPerShard;
-    int n;
-    PR_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    intT vertPerShard;
+    intT n;
+    PR_Hash_F(intT _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
     
-    inline int hashFunc(int index) {
+    inline intT hashFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index % shardNum;
-	int idxInShard = index / shardNum;
+	intT idxOfShard = index % shardNum;
+	intT idxInShard = index / shardNum;
 	return (idxOfShard * vertPerShard + idxInShard);
     }
 
-    inline int hashBackFunc(int index) {
+    inline intT hashBackFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index / vertPerShard;
-	int idxInShard = index % vertPerShard;
+	intT idxOfShard = index / vertPerShard;
+	intT idxInShard = index % vertPerShard;
 	return (idxOfShard + idxInShard * shardNum);
     }
 };
@@ -556,7 +556,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
     pthread_mutex_init(&mut, NULL);
-    int sizeArr[numOfNode];
+    intT sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
     //graphHasher(GA, hasher);
     graphAllEdgeHasher(GA, hasher);
@@ -569,13 +569,13 @@ void PageRank(graph<vertex> &GA, int maxIter) {
     }
     sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
     */
-    int accum = 0;
+    intT accum = 0;
     for (int i = 0; i < numOfNode; i++) {
 	intT degreeSum = 0;
 	for (intT j = accum; j < accum + sizeArr[i]; j++) {
 	    degreeSum += GA.V[j].getInDegree();
 	}
-	printf("%d: degree sum: %d\n", i, degreeSum);
+	printf("%d: degree sum: %" PRIintT "\n", i, degreeSum);
 	accum += sizeArr[i];
     }
     //return;
@@ -586,7 +586,7 @@ void PageRank(graph<vertex> &GA, int maxIter) {
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
-    int prev = 0;
+    intT prev = 0;
     for (int i = 0; i < numOfNode; i++) {
 	PR_worker_arg *arg = (PR_worker_arg *)malloc(sizeof(PR_worker_arg));
 	arg->GA = (void *)(&GA);

@@ -34,19 +34,19 @@ template <class vertex>
 void countDegree(graph<vertex> GA, int numOfShards) {
     const intT n = GA.n;
     long long totalSize = 0;
-    for (int i = 0; i < n; i++) {
+    for (intT i = 0; i < n; i++) {
 	if (GA.V[i].getOutDegree() + GA.V[i].getInDegree() <= 0)
 	    continue;
 	totalSize++;
 	//printf("%d", i);
 	/*
-	for (int j = 0; j < GA.V[i].getOutDegree(); j++) {
+	for (intT j = 0; j < GA.V[i].getOutDegree(); j++) {
 	    printf("%d\t%d\n", i, GA.V[i].getOutNeighbor(j));
 	}
 	*/
 	//printf("\n");
     }
-    printf("# of nodes: %ld\n", totalSize);
+    printf("# of nodes: %lld\n", totalSize);
 }
 
 int parallel_main(int argc, char* argv[]) {  

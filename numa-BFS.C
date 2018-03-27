@@ -49,7 +49,7 @@ pthread_barrier_t timerBarr;
 volatile int global_counter;
 volatile int global_toggle;
 
-int vPerNode = 0;
+intT vPerNode = 0;
 int numOfNode = 0;
 
 bool needResult = false;
@@ -88,19 +88,19 @@ struct BFS_worker_arg {
     void *GA;
     int tid;
     int numOfNode;
-    int rangeLow;
-    int rangeHi;
-    int start;
+    intT rangeLow;
+    intT rangeHi;
+    intT start;
 };
 
 struct BFS_subworker_arg {
     void *GA;
     int tid;
     int subTid;
-    int startPos;
-    int endPos;
-    int rangeLow;
-    int rangeHi;
+    intT startPos;
+    intT endPos;
+    intT rangeLow;
+    intT rangeHi;
     intT *parents_ptr;
     pthread_barrier_t *global_barr;
     pthread_barrier_t *node_barr;
@@ -123,15 +123,15 @@ bool* edgeMapDenseNoRep(graph<vertex> GA, vertices* frontier, F f, LocalFrontier
     }
 
     subworker.globalWait();
-    int localOffset = next->startID;
+    intT localOffset = next->startID;
     bool *localBitVec = frontier->getArr(subworker.tid);
     int currNodeNum = subworker.tid;
     bool *currBitVector = frontier->getNextArr(currNodeNum);
-    int currOffset = frontier->getOffset(currNodeNum);
-    int counter = 0;
+    intT currOffset = frontier->getOffset(currNodeNum);
+    intT counter = 0;
 
-    int size = frontier->getSize(subworker.tid);
-    int subSize = size / CORES_PER_NODE;
+    intT size = frontier->getSize(subworker.tid);
+    intT subSize = size / CORES_PER_NODE;
     intT startPos = subSize * subworker.subTid;
     intT endPos = subSize * (subworker.subTid + 1);
     if (subworker.subTid == CORES_PER_NODE - 1) {
@@ -166,13 +166,13 @@ void edgeMapNoRep(graph<vertex> GA, vertices *V, F f, LocalFrontier *next, intT 
     vertex *G = GA.V;    
     intT m = V->numNonzeros() + V->getEdgeStat();
     
-    int start = subworker.dense_start;
-    int end = subworker.dense_end;
+    intT start = subworker.dense_start;
+    intT end = subworker.dense_end;
 
     if (m >= threshold) {       
 	//Dense part	
 	if (subworker.isMaster()) {
-	    printf("Dense: %d %d\n", V->numNonzeros(), m);
+	    printf("Dense: %" PRIintT " %" PRIintT "\n", V->numNonzeros(), m);
 	    V->toDense();
 	}
 
@@ -219,11 +219,11 @@ void *BFSSubWorker(void *arg) {
     intT *parents = my_arg->parents_ptr;
     
     int currIter = 0;
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
-    int start = my_arg->startPos;
-    int end = my_arg->endPos;
+    intT start = my_arg->startPos;
+    intT end = my_arg->endPos;
 
     intT numVisited = 0;
 
@@ -314,8 +314,8 @@ void *BFSWorker(void *arg) {
     struct bitmask *nodemask = numa_parse_nodestring(nodeString);
     numa_bind(nodemask);
 
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
     //graph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
     graph<vertex> localGraph = graphFilter2Direction(GA, rangeLow, rangeHi);
@@ -323,7 +323,7 @@ void *BFSWorker(void *arg) {
     while (shouldStart == 0);
     const intT n = GA.n;
     int numOfT = my_arg->numOfNode;
-    int blockSize = rangeHi - rangeLow;
+    intT blockSize = rangeHi - rangeLow;
 
     intT *parents = parents_global;
 
@@ -360,10 +360,10 @@ void *BFSWorker(void *arg) {
     
     LocalFrontier *output = new LocalFrontier(next, rangeLow, rangeHi);
     
-    int sizeOfShards[CORES_PER_NODE];
+    intT sizeOfShards[CORES_PER_NODE];
     partitionByDegree(GA, CORES_PER_NODE, sizeOfShards, sizeof(intT), true);
 
-    int startPos = 0;
+    intT startPos = 0;
 
     pthread_barrier_t localBarr;
     pthread_barrier_init(&localBarr, NULL, CORES_PER_NODE+1);
@@ -450,25 +450,25 @@ void *BFSWorker(void *arg) {
 
 struct PR_Hash_F {
     int shardNum;
-    int vertPerShard;
-    int n;
-    PR_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    intT vertPerShard;
+    intT n;
+    PR_Hash_F(intT _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
     
-    inline int hashFunc(int index) {
+    inline intT hashFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index % shardNum;
-	int idxInShard = index / shardNum;
+	intT idxOfShard = index % shardNum;
+	intT idxInShard = index / shardNum;
 	return (idxOfShard * vertPerShard + idxInShard);
     }
 
-    inline int hashBackFunc(int index) {
+    inline intT hashBackFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index / vertPerShard;
-	int idxInShard = index % vertPerShard;
+	intT idxOfShard = index / vertPerShard;
+	intT idxInShard = index % vertPerShard;
 	return (idxOfShard + idxInShard * shardNum);
     }
 };
@@ -482,7 +482,7 @@ void BFS(intT start, graph<vertex> &GA) {
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
-    int sizeArr[numOfNode];
+    intT sizeArr[numOfNode];
     PR_Hash_F hasher(GA.n, numOfNode);
     graphAllEdgeHasher(GA, hasher);
     partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
@@ -499,7 +499,7 @@ void BFS(intT start, graph<vertex> &GA) {
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
-    int prev = 0;
+    intT prev = 0;
     for (int i = 0; i < numOfNode; i++) {
 	BFS_worker_arg *arg = (BFS_worker_arg *)malloc(sizeof(BFS_worker_arg));
 	arg->GA = (void *)(&GA);
@@ -521,12 +521,12 @@ void BFS(intT start, graph<vertex> &GA) {
     }
     nextTime("BFS");
     if (needResult) {
-	int counter = 0;
+	intT counter = 0;
 	for (intT i = 0; i < GA.n; i++) {
 	    if (parents_global[i] != -1)
 		counter++;
 	}
-	printf("Vert visited: %d\n", counter);
+	printf("Vert visited: %" PRIintT "\n", counter);
     }
 }
 
@@ -534,7 +534,7 @@ int parallel_main(int argc, char* argv[]) {
     char* iFile;
     bool binary = false;
     bool symmetric = false;
-    int start = 0;
+    intT start = 0;
     global_counter = 0;
     global_toggle = 0;
     if(argc > 1) iFile = argv[1];

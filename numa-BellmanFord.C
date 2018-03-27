@@ -38,11 +38,11 @@ int CORES_PER_NODE = 6;
 
 volatile int shouldStart = 0;
 
-int *ShortestPathLen_global = NULL;
+intE *ShortestPathLen_global = NULL;
 int *Visited_global = NULL;
 
 double *p_ans = NULL;
-int vPerNode = 0;
+intT vPerNode = 0;
 int numOfNode = 0;
 
 bool needResult = false;
@@ -59,25 +59,25 @@ vertices *Frontier;
 void *graph_ptr;
 
 struct BF_F {
-    int* ShortestPathLen;
+    intE* ShortestPathLen;
     int* Visited;
-    BF_F(int* _ShortestPathLen, int* _Visited) : 
+    BF_F(intE* _ShortestPathLen, int* _Visited) : 
 	ShortestPathLen(_ShortestPathLen), Visited(_Visited) {}
 
     inline void *nextPrefetchAddr(intT index) {
 	return &ShortestPathLen[index];
     }
 
-    inline bool update (intT s, intT d, intT edgeLen) { //Update ShortestPathLen if found a shorter path
-	intT newDist = ShortestPathLen[s] + edgeLen;
+    inline bool update (intT s, intT d, intE edgeLen) { //Update ShortestPathLen if found a shorter path
+	intE newDist = ShortestPathLen[s] + edgeLen;
 	if(ShortestPathLen[d] > newDist) {
 	    ShortestPathLen[d] = newDist;
 	    if(Visited[d] == 0) { Visited[d] = 1 ; return 1;}
 	}
 	return 0;
     }
-    inline bool updateAtomic (intT s, intT d, int edgeLen){ //atomic Update
-	int newDist = ShortestPathLen[s] + edgeLen;
+    inline bool updateAtomic (intT s, intT d, intE edgeLen){ //atomic Update
+	intE newDist = ShortestPathLen[s] + edgeLen;
 	return (writeMin(&ShortestPathLen[d],newDist) &&
 		CAS(&Visited[d],0,1));
     }
@@ -99,19 +99,19 @@ struct BF_worker_arg {
     int tid;
     int numOfNode;
     intT start;
-    int rangeLow;
-    int rangeHi;
+    intT rangeLow;
+    intT rangeHi;
 };
 
 struct BF_subworker_arg {
     void *GA;
     int tid;
     int subTid;
-    int startPos;
-    int endPos;
-    int rangeLow;
-    int rangeHi;
-    int **ShortestPathLen_ptr;
+    intT startPos;
+    intT endPos;
+    intT rangeLow;
+    intT rangeHi;
+    intE **ShortestPathLen_ptr;
     int **Visited_ptr;
     pthread_barrier_t *node_barr;
     pthread_barrier_t *node_barr2;
@@ -131,15 +131,15 @@ void *BFSubWorker(void *arg) {
     pthread_barrier_t *local_barr = my_arg->node_barr;
     LocalFrontier *output = my_arg->localFrontier;
 
-    int *ShortestPathLen = *(my_arg->ShortestPathLen_ptr);
+    intE *ShortestPathLen = *(my_arg->ShortestPathLen_ptr);
     int *Visited = *(my_arg->Visited_ptr);
     
     int currIter = 0;
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
-    int start = my_arg->startPos;
-    int end = my_arg->endPos;
+    intT start = my_arg->startPos;
+    intT end = my_arg->endPos;
 
     intT numVisited = 0;
 
@@ -167,11 +167,11 @@ void *BFSubWorker(void *arg) {
 	currIter++;
 	if (tid + subTid == 0) {
 	    numVisited += Frontier->numNonzeros();
-	    printf("Round %d: num of non zeros: %d\t", currIter, Frontier->numNonzeros());
+	    printf("Round %d: num of non zeros: %" PRIintT "\t", currIter, Frontier->numNonzeros());
 	}
 
 	if (subTid == 0) {
-	    //{parallel_for(long i=output->startID;i<output->endID;i++) output->setBit(i, false);}
+	    //{parallel_for(intT i=output->startID;i<output->endID;i++) output->setBit(i, false);}
 	}
 	//pthread_barrier_wait(&global_barr);
 	//subworker.globalWait();
@@ -231,14 +231,14 @@ void *BFThread(void *arg) {
     struct bitmask *nodemask = numa_parse_nodestring(nodeString);
     numa_bind(nodemask);
 
-    int rangeLow = my_arg->rangeLow;
-    int rangeHi = my_arg->rangeHi;
+    intT rangeLow = my_arg->rangeLow;
+    intT rangeHi = my_arg->rangeHi;
 
     wghGraph<vertex> localGraph = graphFilter(GA, rangeLow, rangeHi);
 
-    int sizeOfShards[CORES_PER_NODE];
+    intT sizeOfShards[CORES_PER_NODE];
 
-    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(int), true, true);
+    subPartitionByDegree(localGraph, CORES_PER_NODE, sizeOfShards, sizeof(intT), true, true);
     
     for (int i = 0; i < CORES_PER_NODE; i++) {
 	//printf("subPartition: %d %d: %d\n", tid, i, sizeOfShards[i]);
@@ -255,14 +255,14 @@ void *BFThread(void *arg) {
     const intT n = GA.n;
     int numOfT = my_arg->numOfNode;
 
-    int blockSize = rangeHi - rangeLow;
+    intT blockSize = rangeHi - rangeLow;
 
     //printf("blockSizeof %d: %d low: %d high: %d\n", tid, blockSize, rangeLow, rangeHi);
 
     double one_over_n = 1/(double)n;
     
     
-    int *ShortestPathLen = ShortestPathLen_global;
+    intE *ShortestPathLen = ShortestPathLen_global;
     int *Visited = Visited_global;
     bool* frontier = (bool *)numa_alloc_local(sizeof(bool) * blockSize);
     
@@ -320,7 +320,7 @@ void *BFThread(void *arg) {
     pthread_barrier_t localBarr2;
     pthread_barrier_init(&localBarr2, NULL, CORES_PER_NODE);
 
-    int startPos = 0;
+    intT startPos = 0;
 
     pthread_t subTids[CORES_PER_NODE];    
     
@@ -368,25 +368,25 @@ void *BFThread(void *arg) {
 
 struct BF_Hash_F {
     int shardNum;
-    int vertPerShard;
-    int n;
-    BF_Hash_F(int _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
+    intT vertPerShard;
+    intT n;
+    BF_Hash_F(intT _n, int _shardNum):n(_n), shardNum(_shardNum), vertPerShard(_n / _shardNum){}
     
-    inline int hashFunc(int index) {
+    inline intT hashFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index % shardNum;
-	int idxInShard = index / shardNum;
+	intT idxOfShard = index % shardNum;
+	intT idxInShard = index / shardNum;
 	return (idxOfShard * vertPerShard + idxInShard);
     }
 
-    inline int hashBackFunc(int index) {
+    inline intT hashBackFunc(intT index) {
 	if (index >= shardNum * vertPerShard) {
 	    return index;
 	}
-	int idxOfShard = index / vertPerShard;
-	int idxInShard = index % vertPerShard;
+	intT idxOfShard = index / vertPerShard;
+	intT idxInShard = index % vertPerShard;
 	return (idxOfShard + idxInShard * shardNum);
     }
 };
@@ -400,10 +400,10 @@ void BF_main(wghGraph<vertex> &GA, intT start) {
     pthread_barrier_init(&timerBarr, NULL, numOfNode+1);
     pthread_barrier_init(&global_barr, NULL, CORES_PER_NODE * numOfNode);
     pthread_mutex_init(&mut, NULL);
-    int sizeArr[numOfNode];
+    intT sizeArr[numOfNode];
     BF_Hash_F hasher(GA.n, numOfNode);
     graphHasher(GA, hasher);
-    partitionByDegree(GA, numOfNode, sizeArr, sizeof(int));
+    partitionByDegree(GA, numOfNode, sizeArr, sizeof(intT));
     /*
     intT vertPerPage = PAGESIZE / sizeof(double);
     intT subShardSize = ((GA.n / numOfNode) / vertPerPage) * vertPerPage;
@@ -412,12 +412,12 @@ void BF_main(wghGraph<vertex> &GA, intT start) {
     }
     sizeArr[numOfNode - 1] = GA.n - subShardSize * (numOfNode - 1);
     */
-    ShortestPathLen_global = (int *)mapDataArray(numOfNode, sizeArr, sizeof(int));
+    ShortestPathLen_global = (intE *)mapDataArray(numOfNode, sizeArr, sizeof(intE));
     Visited_global = (int *)mapDataArray(numOfNode, sizeArr, sizeof(int));
 
     printf("start create %d threads\n", numOfNode);
     pthread_t tids[numOfNode];
-    int prev = 0;
+    intT prev = 0;
     graph_ptr = (void *)(&GA);
     for (int i = 0; i < numOfNode; i++) {
 	BF_worker_arg *arg = (BF_worker_arg *)malloc(sizeof(BF_worker_arg));
@@ -450,7 +450,7 @@ int parallel_main(int argc, char* argv[]) {
     char* iFile;
     bool binary = false;
     bool symmetric = false;
-    int startPos = 1;
+    intT startPos = 1;
     needResult = false;
     if(argc > 1) iFile = argv[1];
     if(argc > 2) startPos = atoi(argv[2]);

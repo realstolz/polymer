@@ -26,20 +26,20 @@
 using namespace std;
 
 struct BF_F {
-    int* ShortestPathLen;
+    intE* ShortestPathLen;
     int* Visited;
-    BF_F(int* _ShortestPathLen, int* _Visited) : 
+    BF_F(intE* _ShortestPathLen, int* _Visited) : 
 	ShortestPathLen(_ShortestPathLen), Visited(_Visited) {}
-    inline bool update (intT s, intT d, intT edgeLen) { //Update ShortestPathLen if found a shorter path
-	intT newDist = ShortestPathLen[s] + edgeLen;
+    inline bool update (intT s, intT d, intE edgeLen) { //Update ShortestPathLen if found a shorter path
+	intE newDist = ShortestPathLen[s] + edgeLen;
 	if(ShortestPathLen[d] > newDist) {
 	    ShortestPathLen[d] = newDist;
 	    if(Visited[d] == 0) { Visited[d] = 1 ; return 1;}
 	}
 	return 0;
     }
-    inline bool updateAtomic (intT s, intT d, int edgeLen){ //atomic Update
-	int newDist = ShortestPathLen[s] + edgeLen;
+    inline bool updateAtomic (intT s, intT d, intE edgeLen){ //atomic Update
+	intE newDist = ShortestPathLen[s] + edgeLen;
 	return (writeMin(&ShortestPathLen[d],newDist) &&
 		CAS(&Visited[d],0,1));
     }
@@ -62,7 +62,7 @@ int* BellmanFord(intT start, wghGraph<vertex> GA) {
 	if (GA.V[i].getOutDegree() + GA.V[i].getInDegree() <= 0)
 	    continue;
 	for (intT j = 0; j < GA.V[i].getOutDegree(); j++) {
-	    printf("%d\t%d\t%d\n", i, GA.V[i].getOutNeighbor(j), GA.V[i].getOutWeight(j));
+	    printf("%" PRIintT "\t%" PRIintT "\t%" PRIintE "\n", i, GA.V[i].getOutNeighbor(j), GA.V[i].getOutWeight(j));
 	}
     }
     return NULL;

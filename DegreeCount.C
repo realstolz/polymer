@@ -33,9 +33,9 @@ bool needOutDegree = false;
 template <class vertex>
 void countDegree(graph<vertex> GA, int numOfShards) {
     const intT n = GA.n;
-    int *degrees = newA(int, n);
+    intT *degrees = newA(intT, n);
 
-    int shardSize = n / numOfShards;
+    intT shardSize = n / numOfShards;
 
     if (needOutDegree) {
 	{parallel_for(intT i = 0; i < n; i++) degrees[i] = GA.V[i].getOutDegree();}
@@ -43,21 +43,21 @@ void countDegree(graph<vertex> GA, int numOfShards) {
 	{parallel_for(intT i = 0; i < n; i++) degrees[i] = GA.V[i].getInDegree();}
     }
 
-    int accum[numOfShards];
-    int partitionResult[numOfShards];
+    intT accum[numOfShards];
+    intT partitionResult[numOfShards];
     for (int i = 0; i < numOfShards; i++) {
 	accum[i] = 0;
 	partitionResult[i] = 0;
     }
 
-    long totalDegree = 0;
+    long long totalDegree = 0;
     for (intT i = 0; i < n; i++) {
 	totalDegree += degrees[i];
     }
 
-    int averageDegree = totalDegree / numOfShards;
-    int counter = 0;
-    int tmpSizeCounter = 0;
+    intT averageDegree = totalDegree / numOfShards;
+    intT counter = 0;
+    intT tmpSizeCounter = 0;
     for (intT i = 0; i < n; i+=PAGESIZE/sizeof(double)) {
 	for (intT j = 0; j < PAGESIZE / sizeof(double); j++) {
 	    if (i + j >= n)
@@ -79,7 +79,7 @@ void countDegree(graph<vertex> GA, int numOfShards) {
 	cout << accum[i] << endl;
     }
 
-    int sum = 0;
+    intT sum = 0;
     for (int i = 0; i < numOfShards; i++) {
 	sum += partitionResult[i];
 	cout << partitionResult[i] << " " << partitionResult[i]/(double)(PAGESIZE / sizeof(double)) << endl;

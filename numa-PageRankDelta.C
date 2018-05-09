@@ -57,6 +57,9 @@ vertices *All;
 
 Default_Hash_F *hasher2;
 
+volatile int global_counter = 0;
+volatile int global_toggle = 0;
+
 template <class vertex>
 struct PR_F {
     vertex* V;
@@ -155,6 +158,8 @@ struct PR_subworker_arg {
     pthread_barrier_t *node_barr2;
     LocalFrontier *localFrontier;
     LocalFrontier *dummyFrontier;
+    volatile int *barr_counter;
+    volatile int *toggle;
 };
 
 template <class vertex>
@@ -182,6 +187,9 @@ void *PageRankSubWorker(void *arg) {
     intT start = my_arg->startPos;
     intT end = my_arg->endPos;
 
+    Custom_barrier globalCustom(&global_counter, &global_toggle, Frontier->numOfNodes);
+    Custom_barrier localCustom(my_arg->barr_counter, my_arg->toggle, CORES_PER_NODE);
+
     Subworker_Partitioner subworker(CORES_PER_NODE);
     subworker.tid = tid;
     subworker.subTid = subTid;
@@ -189,6 +197,8 @@ void *PageRankSubWorker(void *arg) {
     subworker.dense_end = end;
     subworker.global_barr = &global_barr;
     subworker.local_barr = my_arg->node_barr2;
+    subworker.local_custom = localCustom;
+    subworker.subMaster_custom = globalCustom;
 
     pthread_barrier_wait(local_barr);
     intT threshold = 0;
@@ -332,6 +342,9 @@ void *PageRankThread(void *arg) {
 
     pthread_t subTids[CORES_PER_NODE];
 
+    volatile int local_custom_counter = 0;
+    volatile int local_toggle = 0;
+
     for (int i = 0; i < CORES_PER_NODE; i++) {	
 	PR_subworker_arg *arg = (PR_subworker_arg *)malloc(sizeof(PR_subworker_arg));
 	arg->GA = (void *)(&localGraph);
@@ -349,7 +362,10 @@ void *PageRankThread(void *arg) {
 	arg->node_barr2 = &localBarr2;
 	arg->localFrontier = output;
 	arg->dummyFrontier = dummy;
-	
+
+	arg->barr_counter = &local_custom_counter;
+	arg->toggle = &local_toggle;
+
 	arg->startPos = startPos;
 	arg->endPos = startPos + sizeOfShards[i];
 	startPos = arg->endPos;

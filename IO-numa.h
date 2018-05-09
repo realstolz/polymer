@@ -242,7 +242,7 @@ graph<vertex> readGraphFromFileSkipRing(char* fname, bool isSymmetric) {
   intE *edgesSkipedRing = newA(intE, edgeCnt);
   intE *ptr = edgesSkipedRing;
 
-  {parallel_for(size_t i=0; i < n; i++) {
+  for (size_t i=0; i < n; i++) {
     intT outDegree = v[i].getOutDegree();
     intE *outEdgePtr = v[i].getOutNeighborPtr();
 
@@ -252,7 +252,7 @@ graph<vertex> readGraphFromFileSkipRing(char* fname, bool isSymmetric) {
 	      ptr += 1;
       }
     }
-  }}
+  }
 
   free(offsets);
   free(edges);
@@ -470,7 +470,7 @@ graph<vertex> readGraphFromBinarySkipRing(char* iFile, bool isSymmetric) {
   uintE *edgesSkipedRing = newA(uintE, edgeCnt);
   intE *ptr = (intE *)edgesSkipedRing;
 
-  {parallel_for(size_t i=0; i < n; i++) {
+  for (size_t i=0; i < n; i++) {
     intT outDegree = v[i].getOutDegree();
     intE *outEdgePtr = v[i].getOutNeighborPtr();
 
@@ -480,7 +480,7 @@ graph<vertex> readGraphFromBinarySkipRing(char* iFile, bool isSymmetric) {
 	      ptr += 1;
       }
     }
-  }}
+  }
 
   free(offsets);
   free(edges);

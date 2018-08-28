@@ -477,7 +477,7 @@ template <class vertex>
 void BFS(intT start, graph<vertex> &GA) {
     numOfNode = numa_num_configured_nodes();
     int numOfCpu = numa_num_configured_cpus();
-    CORES_PER_NODE = 10;//numOfCpu / numOfNode;
+    CORES_PER_NODE = numOfCpu / numOfNode;
     vPerNode = GA.n / numOfNode;
     pthread_barrier_init(&barr, NULL, numOfNode);
     pthread_barrier_init(&global_barr, NULL, numOfNode * CORES_PER_NODE);
